@@ -1,3 +1,52 @@
 {
-  "items": []
+  "items": [
+    {
+      "name": "cathrynlavery/diagram-design",
+      "link": "https://github.com/cathrynlavery/diagram-design",
+      "date": "2026-10-16",
+      "stars": 49515
+    },
+    {
+      "name": "STRATA-S12 (arXiv:2610.17680)",
+      "link": "https://arxiv.org/abs/2610.17680",
+      "date": "2026-10-16",
+      "stars": null
+    },
+    {
+      "name": "O-SCOPE (arXiv:2610.18906)",
+      "link": "https://arxiv.org/abs/2610.18906",
+      "date": "2026-10-16",
+      "stars": null
+    },
+    {
+      "name": "Hackaday FPGA Chronicles: Ready To Probe",
+      "link": "https://hackaday.com/2026/10/13/the-fpga-chronicles-ready-to-probe/",
+      "date": "2026-10-16",
+      "stars": null
+    },
+    {
+      "name": "Claude Code 2.1.296-2.1.300",
+      "link": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+      "date": "2026-10-16",
+      "stars": null
+    },
+    {
+      "name": "PRIME (arXiv:2610.13296)",
+      "link": "https://arxiv.org/abs/2610.13296",
+      "date": "2026-10-16",
+      "stars": null
+    },
+    {
+      "name": "SAFE-QE (arXiv:2610.13810)",
+      "link": "https://arxiv.org/abs/2610.13810",
+      "date": "2026-10-16",
+      "stars": null
+    },
+    {
+      "name": "LLMQuant/quant-mind",
+      "link": "https://github.com/LLMQuant/quant-mind",
+      "date": "2026-10-16",
+      "stars": 2977
+    }
+  ]
 }
