@@ -1,7 +1,7 @@
-# Geri bildirim özeti
+# Feedback summary
 
-Notlardaki geri bildirimlerden derlenir. Sadece notlarda yazılmış geri bildirimler buraya girer.
+Compiled from the feedback sections of the daily notes. Only feedback actually written in the notes goes here.
 
-## İşe yarayan türler
+## Useful kinds of items
 
-## İşe yaramayan türler
+## Not useful kinds of items

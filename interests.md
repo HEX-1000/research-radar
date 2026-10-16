@@ -1,29 +1,29 @@
-# İlgi alanları
+# Interests
 
-Bu dosya asistanın rehberi. Konu eklemek, çıkarmak ya da önceliği değiştirmek için burayı düzenle.
+This file is the assistant's guide. Edit it to add or remove topics or change priorities.
 
 ## HEX 1000
-İngilizce CS/AI eğitim YouTube kanalı. Series A: CS/AI temelleri. Series B: sıfırdan Python. Kurgu DaVinci Resolve'da, Claude Code ve bir Resolve MCP köprüsüyle yapılıyor. Bilgi taşıyan görseller SVG olarak üretilip PNG'ye çevriliyor.
-Aranacaklar: kodla video ve animasyon üretimi, diyagram ve SVG araçları, DaVinci Resolve otomasyonu, eğitim içeriği için kaynak repolar, ses temizleme ve iyileştirme.
+English-language CS/AI education YouTube channel. Series A: CS/AI fundamentals. Series B: Python from scratch. Editing is done in DaVinci Resolve, with Claude Code and a Resolve MCP bridge. Information-carrying visuals are made as SVG and rendered to PNG.
+Look for: code-driven video and animation, diagram and SVG tools, DaVinci Resolve automation, source repos for educational content, audio cleanup and enhancement.
 
-## Remote sensing / jeoloji / arkeoloji
-Fethiye-Likya pilotuyla başlayan, Anadolu'dan Orta Asya'ya uzanan yapay zeka destekli arkeo-jeolojik patern tanıma projesi. Şu anki çalışma: Kayaköy üzerinde DEM, eğim, bakı, su akışı ve NDVI analizleri. Araçlar: Microsoft Planetary Computer STAC (sentinel-2-l2a, cop-dem-glo-30), pystac-client, stackstac, xarray, rioxarray, geopandas. Sıradaki adımlar: spyndex ile spektral indeksler, U-Net tabanlı anomali haritası, fotogrametri (OpenDroneMap), LIDAR (PDAL, CloudCompare), TorchGeo.
-Aranacaklar: açık uydu ve DEM verisi, STAC ekosistemi, spektral analiz, gömülü yapı ve yüzey anomalisi tespiti, arkeolojik alan tespitinde derin öğrenme, nokta bulutu araçları, jeoloji ve arkeoloji için açık veri setleri.
+## Remote sensing / geology / archaeology
+An AI-assisted archaeo-geological pattern recognition project that starts with a Fethiye-Lycia pilot and extends from Anatolia to Central Asia. Current work: DEM, slope, aspect, water flow and NDVI analyses over Kayaköy. Tools: Microsoft Planetary Computer STAC (sentinel-2-l2a, cop-dem-glo-30), pystac-client, stackstac, xarray, rioxarray, geopandas. Next steps: spectral indices with spyndex, a U-Net based anomaly map, photogrammetry (OpenDroneMap), LIDAR (PDAL, CloudCompare), TorchGeo.
+Look for: open satellite and DEM data, the STAC ecosystem, spectral analysis, detection of buried structures and surface anomalies, deep learning for archaeological site detection, point cloud tools, open datasets for geology and archaeology.
 
-## HEX Industries
-Bağımsız bir tasarım ve üretim girişimi: mevcut teknolojileri temel bilimlerden ve yapay zekadan yola çıkarak baştan tasarlamak. Küçük bir atölyeyle, numunelerle başlanıyor. İki hat:
-1. Enerji depolama ve yönetimi: 18650 BMS, solar MPPT kontrolcü, yeni hücre kimyaları (katı hal, süperkapasitör hibritleri, sodyum ve çinko-hava). Araçlar: ESP32, MicroPython/C, KiCad, PCB üretimi.
-2. Dijital mantığın yeniden tasarımı: FPGA (ör. Tang Nano 9K), analog hesaplama, nöromorfik yaklaşımlar. HEX 1000 içeriğinin donanım tarafı.
-Uzun vadeli hedef: yapay zeka yönetimli, çok süreçli bir üretim hücresi ("fabricator").
-Aranacaklar: açık donanım BMS ve MPPT projeleri, KiCad ekosistemi, açık FPGA araç zinciri, batarya ve nöromorfik donanım makaleleri, küçük atölyeye uygun ölçüm aletleri.
+## HEX INDUSTRIES
+An independent design and manufacturing venture: redesigning existing technologies from first principles and AI. It starts small, with a workshop and prototypes. Two tracks:
+1. Energy storage and management: 18650 BMS, solar MPPT controllers, new cell chemistries (solid state, supercapacitor hybrids, sodium and zinc-air). Tools: ESP32, MicroPython/C, KiCad, PCB fabrication.
+2. Redesigning digital logic: FPGA (e.g. Tang Nano 9K), analog computing, neuromorphic approaches. The hardware side of HEX 1000's content.
+Long-term goal: an AI-orchestrated, multi-process production cell (the "fabricator").
+Look for: open hardware BMS and MPPT projects, the KiCad ecosystem, open FPGA toolchains, papers on batteries and neuromorphic hardware, measurement equipment suited to a small workshop.
 
 ## Token Optimization System
-Yerel çalışan bir MCP bağlam/token optimizer (SQLite FTS5, BM25). Kurallar: yerel, telemetrisiz, gereksiz paket yok.
-Aranacaklar: retrieval ve chunking yöntemleri, BM25 normalizasyonu, bağlam sıkıştırma, Claude Code token yönetimi, MCP gelişmeleri, Office ve PDF metin çıkarma.
+A local MCP context/token optimizer (SQLite FTS5, BM25). Rules: local only, no telemetry, no unnecessary packages.
+Look for: retrieval and chunking methods, BM25 normalization, context compression, token management in Claude Code, MCP developments, text extraction from Office files and PDFs.
 
-## Finans araçları
-Faktör yatırımı, trend takibi ve backtest.
-Aranacaklar: açık kaynak backtest ve portföy araçları, ücretsiz veri kaynakları, finans ajanı mimarileri. Yatırım tavsiyesi değil.
+## Finance tools
+Factor investing, trend following and backtesting.
+Look for: open-source backtesting and portfolio tools, free data sources, finance agent architectures. Not investment advice.
 
-## Ek kaynaklar
-(Asistanın ayrıca bakmasını istediğin siteleri buraya ekle.)
+## Extra sources
+(Add any other sites you want the assistant to check here.)
