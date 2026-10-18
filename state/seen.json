@@ -89,6 +89,30 @@
       "link": "https://arxiv.org/abs/2610.21267",
       "date": "2026-10-17",
       "stars": null
+    },
+    {
+      "name": "debpalash/VoiceStudio",
+      "link": "https://github.com/debpalash/VoiceStudio",
+      "date": "2026-10-18",
+      "stars": 69668
+    },
+    {
+      "name": "K-Dense-AI/scientific-agent-skills",
+      "link": "https://github.com/K-Dense-AI/scientific-agent-skills",
+      "date": "2026-10-18",
+      "stars": 50826
+    },
+    {
+      "name": "Hackaday: Evolving RC Circuits (Darwin Board)",
+      "link": "https://hackaday.com/2026/10/18/evolving-rc-circuits/",
+      "date": "2026-10-18",
+      "stars": null
+    },
+    {
+      "name": "Claude Code 2.1.301-2.1.302",
+      "link": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+      "date": "2026-10-18",
+      "stars": null
     }
   ]
 }
