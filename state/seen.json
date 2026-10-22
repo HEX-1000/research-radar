@@ -113,6 +113,48 @@
       "link": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
       "date": "2026-10-18",
       "stars": null
+    },
+    {
+      "name": "GEM-15 (Earth Engine)",
+      "link": "https://developers.google.com/earth-engine/datasets/catalog/projects_climate-and-sustainability_assets_gem-15_v1",
+      "date": "2026-10-22",
+      "stars": null
+    },
+    {
+      "name": "AlphaEarth Emergent Sparsity (arXiv:2610.25258)",
+      "link": "https://arxiv.org/abs/2610.25258",
+      "date": "2026-10-22",
+      "stars": null
+    },
+    {
+      "name": "KiCad 10.0.7",
+      "link": "https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/",
+      "date": "2026-10-22",
+      "stars": null
+    },
+    {
+      "name": "Hackaday FPGA Chronicles: Open Source It",
+      "link": "https://hackaday.com/2026/10/05/the-fpga-chronicles-open-source-it/",
+      "date": "2026-10-22",
+      "stars": null
+    },
+    {
+      "name": "Graphify-Labs/graphify",
+      "link": "https://github.com/Graphify-Labs/graphify",
+      "date": "2026-10-22",
+      "stars": 132600
+    },
+    {
+      "name": "Memory-Centric Compression survey (arXiv:2610.21165)",
+      "link": "https://arxiv.org/abs/2610.21165",
+      "date": "2026-10-22",
+      "stars": null
+    },
+    {
+      "name": "Claude Code 2.1.303-2.1.308",
+      "link": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+      "date": "2026-10-22",
+      "stars": null
     }
   ]
 }
