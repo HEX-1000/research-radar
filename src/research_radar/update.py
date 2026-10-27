@@ -358,7 +358,8 @@ def _git(root: Path, *args: str, timeout: float = 60) -> tuple[int, str]:
 
 def origin_is(url: str, repo: str) -> bool:
     """True when a remote URL points at owner/name exactly (https, ssh or a local path)."""
-    return re.search(r"[:/]" + re.escape(repo) + r"(?:\.git)?/?$", url.strip(), re.IGNORECASE) is not None
+    url = url.strip().replace("\\", "/")  # a local path on Windows uses backslashes
+    return re.search(r"[:/]" + re.escape(repo) + r"(?:\.git)?/?$", url, re.IGNORECASE) is not None
 
 
 def _update_git(root: Path, old: str, repo: str, branch: str, pyproject_url: str, timeout: float, pip: Pip) -> UpdateResult:

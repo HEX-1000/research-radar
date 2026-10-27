@@ -233,8 +233,12 @@ def test_every_key_line_of_the_sheet_fits_an_80_column_terminal():
 async def test_the_footer_fits_80_columns_and_names_f1_and_quit(tmp_path):
     app = tui.RadarApp(config(tmp_path), auto_scan=False, probe=has(EMBED, "llama3:8b"))
     async with app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-        keys = list(app.screen.query(FooterKey))
+        keys = []
+        for _ in range(60):  # the footer fills in a moment after the screen opens, later on a slow machine
+            await pilot.pause(0.05)
+            keys = list(app.screen.query(FooterKey))
+            if {"s", "e", "f1", "q"} <= {k.key for k in keys}:
+                break
         shown = {k.key for k in keys}
         assert {"s", "e", "f1", "q"} <= shown
         assert "question_mark" not in shown
