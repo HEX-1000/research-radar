@@ -142,6 +142,7 @@ def test_the_prompt_never_offers_install_for_a_paper():
     assert "install =" in seen[1]
     assert "empty string" not in seen[0]  # the model is no longer invited to leave "why" blank
     assert "Never say the item does, supports or uses something" in seen[0]
+    assert 'with "you" and "your"' in seen[0]
 
 
 # delivery: email ---------------------------------------------------------------------------
