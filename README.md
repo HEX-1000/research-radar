@@ -107,8 +107,9 @@ Each source is a small module in `src/research_radar/sources/`. A source takes t
 
 ## Privacy
 
-- Your interests, notes, votes and history live in your data folder and are not sent anywhere.
+- Your interests file, notes, votes and history live in your data folder and are never sent anywhere.
 - The only network traffic is requests to the sources above and to your local Ollama.
+- Email and Telegram are off by default. If you turn one on, each digest (titles, links and short summaries, which show what you follow) is sent through your mail server or through Telegram. Nothing else leaves your machine.
 - There is no telemetry.
 - `.gitignore` excludes `interests.yaml`, `notes/`, `state/`, vote files and `.env`, so running the app from inside a clone cannot commit personal data by accident.
 
