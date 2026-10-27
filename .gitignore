@@ -27,3 +27,6 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Files an update replaced (see src/research_radar/update.py)
+.update_backup/

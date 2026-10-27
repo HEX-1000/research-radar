@@ -23,33 +23,57 @@ If Ollama is not running, a scan still works: items are matched by keywords and 
 
 ## Install
 
-You need Python 3.10 or newer and Ollama.
+You need Python 3.10 or newer and [Ollama](https://ollama.com/download). When the Ollama installer asks you to sign in, you can choose "No thanks, I'll use Ollama locally".
+
+### Windows
+
+Download the repository (the green Code button, Download ZIP, then unpack it) or clone it, open PowerShell in the folder and run:
+
+```
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+It asks no questions. It checks that Python is 3.10 or newer, creates a Python environment in `.venv` with Research Radar in it, creates your data folder with a starter `interests.yaml` (an existing one is never overwritten), and puts a Research Radar icon on the desktop. At the end it checks that Ollama is installed and running and that the two models a scan uses are downloaded. Anything missing is listed under **Before you start**, with the command that fixes it. These checks only warn: the program is installed either way. Run the script again after moving the folder.
+
+The commands below then live in `.venv\Scripts\radar.exe`, for example `.venv\Scripts\radar.exe doctor`.
+
+### Other systems
 
 ```
 git clone https://github.com/HEX-1000/research-radar
 cd research-radar
+python3 -m venv .venv
+. .venv/bin/activate
 pip install -e .
+radar init
 ```
 
-Install the models once:
+### The models
+
+A scan uses two local models: an embedding model that matches items with your topics, and a chat model that writes the short notes.
 
 ```
 ollama pull nomic-embed-text
-ollama pull <any chat model you like>
+ollama pull qwen3.5:9b
 ```
 
-If `chat_model` is empty in your settings, the first installed non-embedding model is used. A 7B to 8B model is enough, because it only summarises short texts.
+Any chat model works. If `chat_model` is empty in your settings, the first installed non-embedding model is used. A 7B to 9B model is enough, because it only summarises short texts. You do not have to remember any of this: the interface and `radar doctor` name the exact `ollama pull` command for whatever is missing.
 
 ## First run
 
+Open Research Radar from the desktop icon, or run `radar`.
+
+The first thing to do is to describe your own interests. `radar init` copied an example `interests.yaml` with two topics, "Local-first AI tools" and "Geospatial machine learning". While those examples are unchanged, the interface says so, does not start a scan by itself, and `e` opens the file in an editor. Replace the topics with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. Save the file and press `s`: the interface reads the file again before every scan, so it can stay open while you edit. The file documents every setting.
+
+The top bar has a dot next to "ollama". Green means a scan can use both models. Amber means a model is missing and red means Ollama is not reachable; a notice then says what to do. Without Ollama a scan still works, but it matches by keywords only, so the interface does not start one by itself in that case.
+
 ```
 radar init      # creates ~/.research-radar/interests.yaml from the example
-radar doctor    # checks Ollama and every source from your machine
+radar doctor    # checks Ollama and every source from your machine (--local: Ollama only)
 radar           # opens the terminal interface
-radar shortcut  # Windows: puts an icon on the desktop
+radar shortcut  # Windows: puts an icon on the desktop (install.ps1 already did)
+radar update    # installs a newer version now, see Updates
 ```
-
-Edit `interests.yaml` before the first real scan. The example has two topics. Replace them with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. The file documents every setting.
 
 To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
 
@@ -60,10 +84,13 @@ To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
 | `s` | scan now |
 | `+` / `-` | mark the selected item useful or not useful (press again to clear) |
 | `o` | open the link in your browser |
+| `d` | open the digest page of the day you are looking at |
 | `[` / `]` | older day / newer day |
+| `e` | open `interests.yaml` in an editor (Notepad on Windows) |
+| `f1` or `?` | all keys, the version, and where your files are |
 | `q` | quit |
 
-On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`). Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model.
+On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`), unless Ollama or the embedding model is missing or the example topics are still in place. Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model.
 
 ## A desktop icon (Windows)
 
@@ -71,7 +98,7 @@ On launch it catches up automatically if any source has not been scanned today (
 radar shortcut
 ```
 
-puts a Research Radar icon on your desktop. A double-click opens the terminal interface in Windows Terminal when it is installed (colors and borders look best there), or in the normal console otherwise. The icon carries the path of your data folder, so it works even when the `RADAR_HOME` variable is not visible to it. Run the command from the environment where you installed the program. To keep the icon on the taskbar, right-click it and choose Pin to taskbar. If you move the repository or rebuild the virtual environment, run `radar shortcut` again.
+puts a Research Radar icon on your desktop (`install.ps1` does this for you). A double-click opens the terminal interface in Windows Terminal when it is installed (colors and borders look best there), or in the normal console otherwise. The icon carries the path of your data folder, so it works even when the `RADAR_HOME` variable is not visible to it. Run the command from the environment where you installed the program. To keep the icon on the taskbar, right-click it and choose Pin to taskbar. If you move the repository or rebuild the virtual environment, run `radar shortcut` again.
 
 ## The daily digest
 
@@ -114,17 +141,32 @@ On Windows, create a Task Scheduler task that runs `radar scan`, and on the Sett
 
 Each source is a small module in `src/research_radar/sources/`. A source takes the date window and your topics and returns a list of items, so adding one is a short file. Pull requests are welcome.
 
+## Updates
+
+When the terminal interface opens, it reads one small file from this repository on GitHub, `src/research_radar/__init__.py`, and compares the version in it with yours. If the version on GitHub is newer, it installs the new files and starts the new version. You see one line in the console and a notice in the app.
+
+- A `git clone` of this repository is updated with `git pull --ff-only`, unless a tracked file has local edits. Then it skips the update and tells you. A clone of a fork is not updated.
+- A folder unpacked from the ZIP (what `install.ps1` sets up) is updated from the repository ZIP. Every Python file is checked for syntax errors before anything is written.
+- New or changed dependencies are installed with pip before any code changes. If pip fails, nothing changes.
+- Your data folder is never touched, and neither are `.venv`, `.git` or personal files kept at the top of the folder. Files an update replaces are copied to `.update_backup/` first. Nothing is deleted.
+- A plain `pip install` of the package (the code in site-packages) is not changed; the app shows the command that updates it.
+- If GitHub cannot be reached, nothing happens and the app starts as usual.
+
+To turn it off, add `auto_update: false` under `settings` in `interests.yaml`. You can run the check yourself with `radar update`. A scheduled `radar scan` never updates anything.
+
+Updating means running code downloaded from this repository, so the repository owner's GitHub account is trusted the same way it is when you first download the app. Versions before 0.2.0 have no update check. Run `git pull` or download the ZIP again once, and later updates come by themselves.
+
 ## Privacy
 
 - Your interests file, notes, votes and history live in your data folder and are never sent anywhere.
-- The only network traffic is requests to the sources above and to your local Ollama.
+- Network traffic goes to the sources above, to your local Ollama, and, when the interface opens, to GitHub for the update check: plain requests to `raw.githubusercontent.com` and `github.com` with nothing about you in them.
 - Email and Telegram are off by default. If you turn one on, each digest (titles, links and short summaries, which show what you follow) is sent through your mail server or through Telegram. Nothing else leaves your machine.
 - There is no telemetry.
 - `.gitignore` excludes `interests.yaml`, `notes/`, `state/`, vote files and `.env`, so running the app from inside a clone cannot commit personal data by accident.
 
 ## Status
 
-Version 0.1. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface and every source parser. The five sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. If a source or a channel breaks, `radar doctor` reports `FAIL` with a reason. Please open an issue with the output.
+Version 0.2. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface, the first-run guidance, the update check and every source parser. The five sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. The Windows installer and the update check are new in 0.2. If a source, a channel, the installer or an update breaks, `radar doctor` or the console says why. Please open an issue with the output.
 
 `min_score` depends on the embedding model. With `nomic-embed-text` the default of 0.55 is a starting point, and with `embeddinggemma` the best matches score lower (about 0.45 to 0.5), so 0.44 is a better start. Run `radar scan --days 3 --explain` to see the scores and set it for your own topics.
 
