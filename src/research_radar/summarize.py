@@ -29,7 +29,9 @@ Item type: {kind}
 </source>
 
 This item was picked because it looks related to the reader interest. Reply with JSON in exactly this shape:
-{{"what": "<one sentence saying what this is>", "why": "<one sentence saying how it connects to the reader interest>", "verdict": "<one of: {verdicts}>"}}
+{{"what": "<one sentence saying what this is>", "why": "<one sentence that names something specific from the source and says how it relates to the reader interest>", "verdict": "<one of: {verdicts}>"}}
+
+The reader interest describes what the reader cares about. It is not a description of the item. Never say the item does, supports or uses something unless the source text says so. If the link is thin, say so plainly in "why" and prefer watch or skip.
 
 Verdicts:
 {definitions}
