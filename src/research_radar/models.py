@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 VERDICTS = ("install", "read", "watch", "skip")
+
+
+def plain_title(title: str) -> str:
+    """Titles from arXiv sometimes carry LaTeX. Show it as plain text."""
+    text = re.sub(r"\\times\s*", "x", title)
+    text = re.sub(r"\\([a-zA-Z]+)", r"\1", text)
+    text = text.replace("$", "")
+    return " ".join(text.split())
 
 
 @dataclass

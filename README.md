@@ -10,9 +10,10 @@ It does one thing: scan, filter and summarise. There is no chat.
 
 1. Each source fetches what is new since the last successful scan of that source.
 2. Items you have already been shown are dropped.
-3. An embedding model (`nomic-embed-text` by default) compares each item with the topic descriptions in your `interests.yaml`. This step needs no language model and cuts hundreds of items to a few dozen.
+3. An embedding model (`nomic-embed-text` by default, `embeddinggemma` also works) compares each item with the topic descriptions in your `interests.yaml`. This step needs no language model and cuts hundreds of items to a few dozen.
 4. The best few, with a cap per topic and a cap overall, go to a chat model that writes one sentence on what the item is, one on why it fits, and a recommendation: install, read, watch or skip.
 5. The result is saved as a markdown note, `notes/YYYY/MM/YYYY-MM-DD.md`, and shown in the terminal interface.
+6. A digest of the day is written as a web page and, if you turned it on, sent to you by email or Telegram (see below).
 
 The chat model only rewrites the text it is given (a README, an abstract). Links, star counts, licenses and dates come from the source's own fields, never from the model. If a topic has nothing good, the note says so instead of padding.
 
@@ -61,6 +62,27 @@ To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
 
 On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`). Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model.
 
+## The daily digest
+
+The markdown note is the archive. The digest is the version you read: a page grouped by topic, the items worth acting on first (try, read, watch), the ones the model marked "skip" folded into a short list at the end. It has a light and a dark theme and fits a phone screen.
+
+Every scan writes it to `digests/YYYY-MM-DD.html` in your data folder. Press `d` in the terminal interface to open it in your browser. Email and Telegram are optional and off by default. Turn them on in the `delivery` section of `interests.yaml`.
+
+Secrets are never written to that file. It names an environment variable, and the secret lives there.
+
+**Email.** Any SMTP server works. For Gmail, turn on two-step verification, create an app password, and put it in the variable named by `password_env` (`RADAR_SMTP_PASSWORD` by default). The mail has an HTML part and a plain text part.
+
+**Telegram.** Create a bot with [@BotFather](https://t.me/BotFather), put its token in `RADAR_TELEGRAM_TOKEN`, open the bot, press Start and send it any text. Then run `radar telegram-chat` to see your chat id and put it in `delivery.telegram.chat_id`.
+
+```
+radar send --test       # one short test message through each enabled channel
+radar send --dry-run    # write the page and show what would be sent, send nothing
+radar send              # send whatever has not been delivered yet
+radar send --date 2026-10-27   # send a whole past day again
+```
+
+A scan sends only the items that are new. Each channel keeps its own record of what it has delivered, so an item is never sent twice, and one that failed to send (the computer was offline, the server was down) is retried by the next scan for `retry_days` days. A failed send never fails the scan. `radar doctor` checks the login and the bot as well.
+
 ## Scheduling (optional)
 
 The app has no timer and no background process. Because every scan starts from the last successful run of each source, nothing is lost if the computer was off for a few days: the next scan collects the whole gap, up to `max_catchup_days`.
@@ -90,9 +112,9 @@ Each source is a small module in `src/research_radar/sources/`. A source takes t
 
 ## Status
 
-Version 0.1. The test suite covers the pipeline, ranking, notes, the interface and every source parser. The parsers for GitHub, arXiv, Hugging Face and Codeberg were written from their documented response formats and tested against saved examples. They have not yet been checked against the live services from the author's machine, so run `radar doctor` first. It reads one real item from each source and reports `FAIL` with a reason when a format has changed. If it does, please open an issue with the output.
+Version 0.1. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface and every source parser. The five sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. If a source or a channel breaks, `radar doctor` reports `FAIL` with a reason. Please open an issue with the output.
 
-The default `min_score` of 0.55 has not been tuned. If you get too much or too little, change it and look at `radar scan --explain`.
+`min_score` depends on the embedding model. With `nomic-embed-text` the default of 0.55 is a starting point, and with `embeddinggemma` the best matches score lower (about 0.45 to 0.5), so 0.44 is a better start. Run `radar scan --days 3 --explain` to see the scores and set it for your own topics.
 
 ## Development
 

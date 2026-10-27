@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Config
+from .deliver import DeliveryResult, deliver_pending, write_digest_file
 from .http import Http, SourceError
 from .llm import Ollama, OllamaError
 from .models import Item, Report, SkippedSource
@@ -30,6 +31,8 @@ class RunResult:
     warnings: list[str] = field(default_factory=list)
     ranking: str = "embeddings"
     note_path: Path | None = None
+    digest_path: Path | None = None
+    deliveries: list[DeliveryResult] = field(default_factory=list)
     fetched: int = 0
     explain: list[Scored] = field(default_factory=list)
 
@@ -222,6 +225,16 @@ def _scan(
     result.note_path = write_note(
         cfg, local_date, result.all_reports, result.skipped, result.warnings, result.ranking
     )
+
+    # 6. Digest file and messages. Nothing here can fail the scan. ------------------------
+    try:
+        if cfg.delivery["html_file"]:
+            result.digest_path = write_digest_file(cfg, local_date, store=store)
+        if any(cfg.channel_enabled(c) for c in ("email", "telegram")):
+            progress("Sending the digest")
+            result.deliveries = deliver_pending(cfg, store, local_date)
+    except OSError as exc:
+        result.warnings.append(f"Could not write the digest file ({type(exc).__name__}).")
     progress(f"Done: {len(result.new_reports)} new items")
     return result
 

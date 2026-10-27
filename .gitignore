@@ -2,6 +2,7 @@
 # from inside a clone, none of it can be committed by accident.
 interests.yaml
 notes/
+digests/
 state/
 feedback*.json
 feedback*.md

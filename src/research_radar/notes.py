@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import Config
-from .models import Report, SkippedSource
+from .models import Report, SkippedSource, plain_title
 
 
 def _count(value: object) -> str | None:
@@ -41,7 +41,7 @@ def meta_line(report: Report) -> str:
 
 
 def report_line(report: Report) -> str:
-    head = f"- **{report.title}** ({report.url}): "
+    head = f"- **{plain_title(report.title)}** ({report.url}): "
     if report.rising:
         before = _count(report.meta.get("stars_before")) or "?"
         now = _count(report.meta.get("stars_now")) or "?"

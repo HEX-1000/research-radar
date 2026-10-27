@@ -39,6 +39,28 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
 
 SOURCE_KEYS = tuple(DEFAULT_SOURCES)
 
+# Secrets never go in this file. The settings name the environment variable that holds them.
+DEFAULT_DELIVERY: dict[str, Any] = {
+    "html_file": True,  # write digests/YYYY-MM-DD.html for every scan
+    "send_when_empty": False,  # send a "nothing new" message too
+    "retry_days": 3,  # items that failed to send are retried for this many days
+    "email": {
+        "enabled": False,
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587,
+        "security": "starttls",  # starttls, ssl or none
+        "username": "",
+        "password_env": "RADAR_SMTP_PASSWORD",
+        "from": "",  # default: the username
+        "to": "",  # one address or a list
+    },
+    "telegram": {
+        "enabled": False,
+        "token_env": "RADAR_TELEGRAM_TOKEN",
+        "chat_id": "",
+    },
+}
+
 
 class ConfigError(Exception):
     """interests.yaml is missing or does not make sense."""
@@ -69,6 +91,14 @@ class Config:
     sources: dict[str, dict[str, Any]]
     exclude: list[str]
     topics: list[Topic]
+    delivery: dict[str, Any] = field(default_factory=lambda: copy.deepcopy(DEFAULT_DELIVERY))
+
+    @property
+    def digests_dir(self) -> Path:
+        return self.home / "digests"
+
+    def channel_enabled(self, channel: str) -> bool:
+        return bool(self.delivery.get(channel, {}).get("enabled", False))
 
     @property
     def notes_dir(self) -> Path:
@@ -171,7 +201,31 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
         sources=sources,
         exclude=_as_list(data.get("exclude"), "exclude"),
         topics=topics,
+        delivery=_parse_delivery(data.get("delivery")),
     )
+
+
+def _parse_delivery(raw: Any) -> dict[str, Any]:
+    delivery = copy.deepcopy(DEFAULT_DELIVERY)
+    if raw is None:
+        return delivery
+    if not isinstance(raw, dict):
+        raise ConfigError("delivery must be a mapping")
+    for key, value in raw.items():
+        if key not in delivery:
+            raise ConfigError(f"unknown delivery option '{key}' (known: {', '.join(delivery)})")
+        if isinstance(delivery[key], dict):
+            if isinstance(value, bool):
+                value = {"enabled": value}
+            if not isinstance(value, dict):
+                raise ConfigError(f"delivery.{key} must be a mapping")
+            unknown = [k for k in value if k not in delivery[key]]
+            if unknown:
+                raise ConfigError(f"unknown option '{unknown[0]}' in delivery.{key} (known: {', '.join(delivery[key])})")
+            delivery[key].update(value)
+        else:
+            delivery[key] = value
+    return delivery
 
 
 def load_config(home: Path) -> Config:

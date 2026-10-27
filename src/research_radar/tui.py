@@ -15,7 +15,8 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import DataTable, Footer, Header, Static
 
 from .config import Config
-from .models import Report
+from .deliver import describe, write_digest_file
+from .models import Report, plain_title
 from .notes import meta_line
 from .pipeline import RunResult, scan
 from .store import Store
@@ -55,6 +56,7 @@ class RadarApp(App):
         Binding("plus", "vote(1)", "+"),
         Binding("minus", "vote(-1)", "-"),
         Binding("o", "open_link", "Open"),
+        Binding("d", "open_digest", "Digest page"),
         Binding("left_square_bracket", "day(-1)", "Older day"),
         Binding("right_square_bracket", "day(1)", "Newer day"),
         Binding("q", "quit", "Quit"),
@@ -113,7 +115,7 @@ class RadarApp(App):
         table = self.query_one("#list", DataTable)
         table.clear()
         for report in reports:
-            title = f"{report.title} (rising)" if report.rising else report.title
+            title = f"{plain_title(report.title)} (rising)" if report.rising else plain_title(report.title)
             table.add_row(VOTE_MARK[report.vote], report.topic, title, report.verdict, key=report.url)
         if reports:
             self.show_detail(reports[0])
@@ -122,7 +124,7 @@ class RadarApp(App):
 
     def show_detail(self, report: Report) -> None:
         text = Text()
-        text.append(report.title + "\n", style="bold")
+        text.append(plain_title(report.title) + "\n", style="bold")
         text.append(report.url + "\n\n", style="underline")
         text.append(f"{report.topic}  |  {report.source}  |  score {report.score:.2f}\n\n", style="dim")
         if report.rising:
@@ -174,6 +176,11 @@ class RadarApp(App):
         if report:
             webbrowser.open(report.url)
 
+    def action_open_digest(self) -> None:
+        path = write_digest_file(self.cfg, self.current_date, store=self.store)
+        webbrowser.open(path.as_uri())
+        self.set_status(f"Opened the digest page for {self.current_date}.")
+
     def action_vote(self, vote: int) -> None:
         report = self.selected()
         if report is None:
@@ -213,4 +220,6 @@ class RadarApp(App):
         message = f"Scan done: {len(result.new_reports)} new items."
         if result.skipped:
             message += " Skipped: " + ", ".join(s.source for s in result.skipped) + "."
+        for line in describe(result.deliveries):
+            message += f" {line}."
         self.set_status(message)

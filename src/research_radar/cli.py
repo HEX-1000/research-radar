@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import __version__
 from .config import Config, ConfigError, init_home, load_config, resolve_home
+from .deliver import DeliveryError, describe
 from .http import Http, SourceError
 from .llm import Ollama, OllamaError
 
@@ -29,7 +30,13 @@ def build_parser() -> argparse.ArgumentParser:
     scan_p.add_argument("--no-llm", action="store_true", help="skip Ollama: keyword matching and plain descriptions")
     scan_p.add_argument("--explain", action="store_true", help="print the scores of the top 30 candidates")
 
-    sub.add_parser("doctor", help="check Ollama and every source on this machine")
+    send_p = sub.add_parser("send", help="send the digest by the channels enabled in interests.yaml")
+    send_p.add_argument("--date", help="send a whole past day again (YYYY-MM-DD)")
+    send_p.add_argument("--dry-run", action="store_true", help="write the digest page and show what would be sent, send nothing")
+    send_p.add_argument("--test", action="store_true", help="send a short test message through each enabled channel")
+
+    sub.add_parser("telegram-chat", help="find your Telegram chat id (write to your bot first)")
+    sub.add_parser("doctor", help="check Ollama, every source and the delivery channels on this machine")
     return parser
 
 
@@ -59,6 +66,10 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
         print(f"skipped {skipped.source}: {skipped.reason}")
     for warning in result.warnings:
         print(f"warning: {warning}")
+    if result.digest_path:
+        print(f"Digest page: {result.digest_path}")
+    for line in describe(result.deliveries):
+        print(line)
     if explain:
         print()
         print("score  hits  chosen  topic / item")
@@ -68,10 +79,47 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
     return 0
 
 
+def cmd_send(cfg: Config, date: str | None, dry_run: bool, test: bool) -> int:
+    from .deliver import deliver_pending, send_test, write_digest_file
+    from .store import Store
+
+    if not any(cfg.channel_enabled(c) for c in ("email", "telegram")):
+        print("No delivery channel is enabled. Turn one on in the delivery section of interests.yaml.")
+        return 1
+    if test:
+        results = send_test(cfg)
+    else:
+        store = Store(cfg.state_dir)
+        today = datetime.now().astimezone().date().isoformat()
+        if dry_run:
+            print(f"Digest page: {write_digest_file(cfg, date or today, store=store)}")
+        results = deliver_pending(cfg, store, today, only_date=date, dry_run=dry_run)
+    for line in describe(results):
+        print(line)
+    return 0 if all(r.ok for r in results) else 1
+
+
+def cmd_telegram_chat(cfg: Config) -> int:
+    from .deliver import find_telegram_chats
+
+    try:
+        chats = find_telegram_chats(cfg)
+    except DeliveryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not chats:
+        print("No messages found. Open your bot in Telegram, press Start, send it any text, then run this again.")
+        return 1
+    for chat_id, name in chats:
+        print(f"{chat_id}  {name}")
+    print("Put the number in delivery.telegram.chat_id in interests.yaml.")
+    return 0
+
+
 def _probe(label: str, fn) -> bool:
     try:
         detail = fn()
-    except (SourceError, OllamaError) as exc:
+    except (SourceError, OllamaError, DeliveryError) as exc:
         print(f"FAIL  {label}: {exc}")
         return False
     except Exception as exc:  # a changed response shape is a failure worth reporting, not a crash
@@ -168,6 +216,12 @@ def cmd_doctor(cfg: Config) -> int:
                 results.append(_probe(f"forgejo ({instance})", probe_forgejo))
     finally:
         http.close()
+    from .deliver import check_email, check_telegram
+
+    if cfg.channel_enabled("email"):
+        results.append(_probe("email", lambda: check_email(cfg)))
+    if cfg.channel_enabled("telegram"):
+        results.append(_probe("telegram", lambda: check_telegram(cfg)))
     return 0 if all(results) else 1
 
 
@@ -189,6 +243,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_scan(cfg, args.days, args.no_llm, args.explain)
         if command == "doctor":
             return cmd_doctor(cfg)
+        if command == "send":
+            return cmd_send(cfg, args.date, args.dry_run, args.test)
+        if command == "telegram-chat":
+            return cmd_telegram_chat(cfg)
         return cmd_tui(cfg)
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
