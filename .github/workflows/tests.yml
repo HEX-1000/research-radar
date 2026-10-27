@@ -45,12 +45,26 @@ jobs:
       - name: Run the installer exactly as the README says
         shell: cmd
         run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-      - name: Check what it set up
-        shell: cmd
+      - name: Check what it set up, and the daily task
+        shell: powershell
         run: |
-          .venv\Scripts\radar.exe --version
-          .venv\Scripts\radar.exe schedule status
-          .venv\Scripts\radar.exe doctor --local || exit 0
+          $ErrorActionPreference = "Stop"
+          function Run([string]$text, [scriptblock]$command) {
+              $out = (& $command | Out-String)
+              if ($LASTEXITCODE -ne 0) { throw "failed: $text`n$out" }
+              Write-Host $out
+              return $out
+          }
+          $radar = ".\.venv\Scripts\radar.exe"
+          Run "version" { & $radar --version } | Out-Null
+          $before = Run "status before" { & $radar schedule status }
+          if ($before -notmatch "No daily scan") { throw "expected no task yet: $before" }
+          Run "schedule on" { & $radar schedule on --at 06:30 } | Out-Null
+          $after = Run "status after" { & $radar schedule status }
+          if ($after -notmatch "every day at 06:30") { throw "task not registered: $after" }
+          Run "schedule off" { & $radar schedule off } | Out-Null
+          $gone = Run "status gone" { & $radar schedule status }
+          if ($gone -notmatch "No daily scan") { throw "task not removed: $gone" }
       - name: The installer can be run again
         shell: cmd
         run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
