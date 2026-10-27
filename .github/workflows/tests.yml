@@ -33,3 +33,24 @@ jobs:
           text = pathlib.Path("pytest.log").read_text(errors="replace")[-3500:]
           text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
           print("::error title=pytest::" + text)
+
+  installer:
+    name: install.ps1 on Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run the installer exactly as the README says
+        shell: cmd
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+      - name: Check what it set up
+        shell: cmd
+        run: |
+          .venv\Scripts\radar.exe --version
+          .venv\Scripts\radar.exe schedule status
+          .venv\Scripts\radar.exe doctor --local || exit 0
+      - name: The installer can be run again
+        shell: cmd
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
