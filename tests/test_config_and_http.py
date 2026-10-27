@@ -109,3 +109,80 @@ def test_rate_limit_message_is_clear():
     http = Http(transport=httpx.MockTransport(handler), sleep=lambda s: None)
     with pytest.raises(SourceError, match="rate limit"):
         http.get("https://api.github.com/search/repositories")
+
+
+def github_http(responses, sleeps):
+    """An Http client whose GitHub answers come from a list, one per request."""
+    queue = list(responses)
+
+    def handler(request):
+        return queue.pop(0)
+
+    return Http(transport=httpx.MockTransport(handler), sleep=sleeps.append)
+
+
+def test_secondary_rate_limit_waits_for_retry_after_and_then_succeeds():
+    sleeps: list[float] = []
+    http = github_http(
+        [
+            httpx.Response(403, headers={"retry-after": "7"}, json={"message": "You have exceeded a secondary rate limit."}),
+            httpx.Response(200, json={"ok": True}),
+        ],
+        sleeps,
+    )
+    assert http.get_json("https://api.github.com/search/repositories") == {"ok": True}
+    assert sleeps == [8.0]
+
+
+def test_secondary_rate_limit_without_a_header_waits_a_minute():
+    sleeps: list[float] = []
+    http = github_http(
+        [httpx.Response(403, json={"message": "You have exceeded a secondary rate limit."}), httpx.Response(200, json={})],
+        sleeps,
+    )
+    http.get("https://api.github.com/search/repositories")
+    assert sleeps == [60.0]
+
+
+def test_primary_limit_waits_for_the_reset_when_it_is_close():
+    import time as clock_module
+
+    sleeps: list[float] = []
+    soon = str(int(clock_module.time()) + 10)
+    http = github_http(
+        [httpx.Response(403, headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": soon}), httpx.Response(200, json={})],
+        sleeps,
+    )
+    http.get("https://api.github.com/search/repositories")
+    assert len(sleeps) == 1 and 5 <= sleeps[0] <= 12
+
+
+def test_a_far_reset_is_not_waited_for_and_the_message_names_the_limit():
+    import time as clock_module
+
+    sleeps: list[float] = []
+    later = str(int(clock_module.time()) + 3000)
+    http = github_http(
+        [httpx.Response(403, headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": later}, json={"message": "API rate limit exceeded"})],
+        sleeps,
+    )
+    with pytest.raises(SourceError, match=r"rate limit.*GitHub says: API rate limit exceeded"):
+        http.get("https://api.github.com/search/repositories")
+    assert sleeps == []
+
+
+def test_a_limit_that_never_clears_gives_up_after_the_retries():
+    sleeps: list[float] = []
+    busy = httpx.Response(403, headers={"retry-after": "1"}, json={"message": "secondary rate limit"})
+    http = github_http([busy, busy, busy], sleeps)
+    with pytest.raises(SourceError, match="rate limit"):
+        http.get("https://api.github.com/search/repositories")
+    assert len(sleeps) == 2
+
+
+def test_other_403_errors_show_what_github_said_and_are_not_retried():
+    sleeps: list[float] = []
+    http = github_http([httpx.Response(403, json={"message": "Resource not accessible by personal access token"})], sleeps)
+    with pytest.raises(SourceError, match=r"HTTP 403 \(Resource not accessible by personal access token\)"):
+        http.get("https://api.github.com/search/repositories")
+    assert sleeps == []

@@ -141,6 +141,7 @@ def test_the_prompt_never_offers_install_for_a_paper():
     assert "install =" not in seen[0] and "read =" in seen[0]
     assert "install =" in seen[1]
     assert "empty string" not in seen[0]  # the model is no longer invited to leave "why" blank
+    assert "Never say the item does, supports or uses something" in seen[0]
 
 
 # delivery: email ---------------------------------------------------------------------------
@@ -474,3 +475,23 @@ async def test_tui_digest_key_writes_and_opens_the_page(make_cfg, monkeypatch):
         await pilot.press("d")
         await pilot.pause()
     assert len(opened) == 1 and opened[0].startswith("file:") and opened[0].endswith(".html")
+
+
+def test_repeated_failed_searches_become_one_note():
+    warnings = [
+        "github: query 'bm25': HTTP 403",
+        "github: query 'sqlite fts5': HTTP 403",
+        "arxiv: topic 'Finance tools': HTTP 429",
+        "forgejo ran slowly",
+    ]
+    digest = Digest(date="2026-10-27", reports=[report()], warnings=warnings)
+    notes = digest.footer_notes()
+    assert notes[0] == "github: 2 searches failed (bm25, sqlite fts5): HTTP 403"
+    assert notes[1] == "arxiv: 1 search failed (Finance tools): HTTP 429"
+    assert notes[2] == "forgejo ran slowly"
+
+
+def test_telegram_notes_are_in_code_tags_so_hosts_are_not_linked():
+    digest = Digest(date="2026-10-27", reports=[report()], warnings=["github: query 'x': api.github.com: HTTP 403"])
+    text = "".join(render_telegram(digest))
+    assert "<code>github: 1 search failed (x): api.github.com: HTTP 403</code>" in text

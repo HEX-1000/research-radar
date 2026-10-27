@@ -11,6 +11,7 @@ import httpx
 from . import __version__
 
 USER_AGENT = f"research-radar/{__version__} (+https://github.com/HEX-1000/research-radar)"
+MAX_GITHUB_WAIT = 90.0  # seconds a scan is willing to wait for a GitHub rate limit to clear
 
 
 class SourceError(Exception):
@@ -76,13 +77,22 @@ class Http:
                     self._sleep(2.0 * attempt)
                     continue
                 raise SourceError(f"{host}: {type(exc).__name__}: {exc}") from exc
+            if response.status_code in (403, 429) and host == "api.github.com":
+                message = _github_message(response)
+                wait = _github_wait(response, message)
+                if wait is not None and wait <= MAX_GITHUB_WAIT and attempt < retries:
+                    attempt += 1
+                    self._sleep(wait)
+                    continue
+                if wait is not None:
+                    detail = f" (GitHub says: {message})" if message else ""
+                    raise SourceError(f"the search rate limit is used up, try again later or set GITHUB_TOKEN{detail}")
+                if response.status_code == 403:
+                    raise SourceError(f"{host}: HTTP 403" + (f" ({message})" if message else ""))
             if response.status_code in (429, 502, 503, 504) and attempt < retries:
                 attempt += 1
                 self._sleep(_retry_after(response, default=3.0 * attempt))
                 continue
-            if response.status_code == 403 and host == "api.github.com":
-                if response.headers.get("x-ratelimit-remaining") == "0":
-                    raise SourceError("the search rate limit is used up, try again later or set GITHUB_TOKEN")
             if response.status_code >= 400:
                 raise SourceError(f"{host}: HTTP {response.status_code}")
             return response
@@ -93,6 +103,32 @@ class Http:
             return response.json()
         except ValueError as exc:
             raise SourceError(f"{urlparse(url).netloc}: response is not JSON") from exc
+
+
+def _github_message(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        return ""
+    return " ".join(str(data.get("message", "")).split())[:160] if isinstance(data, dict) else ""
+
+
+def _github_wait(response: httpx.Response, message: str) -> float | None:
+    """Seconds to wait when GitHub is rate limiting us, or None when this 403 is something else."""
+    value = response.headers.get("retry-after")
+    if value:
+        try:
+            return float(value) + 1.0
+        except ValueError:
+            pass
+    if response.headers.get("x-ratelimit-remaining") == "0":
+        try:
+            return max(1.0, float(response.headers["x-ratelimit-reset"]) - time.time()) + 1.0
+        except (KeyError, ValueError):
+            return MAX_GITHUB_WAIT + 1.0  # the reset time is unknown, so do not wait for it
+    if "rate limit" in message.lower():
+        return 60.0  # GitHub's advice for a secondary limit without a Retry-After header
+    return None
 
 
 def _retry_after(response: httpx.Response, default: float) -> float:

@@ -2,7 +2,8 @@
 
 GitHub has no official trending API, so "new" means repositories created since
 the last scan, ordered by stars. Without a token the search API allows about 10
-requests a minute, with a token about 30, so queries are spaced out.
+requests a minute, with a token about 30, so queries are spaced out. GitHub also
+refuses bursts with a secondary limit, so the spacing is wider than the minimum.
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ def fetch(ctx: FetchContext) -> list[Item]:
     opts = ctx.config.sources[NAME]
     min_stars = int(opts.get("min_stars", 5))
     per_query = int(opts.get("per_query", 10))
-    interval = 2.2 if ctx.http.github_token else 6.5
+    interval = 3.0 if ctx.http.github_token else 6.5
     since_date = ctx.since.date().isoformat()
 
     items: dict[str, Item] = {}

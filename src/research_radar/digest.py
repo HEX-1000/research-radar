@@ -11,6 +11,7 @@ is escaped before it goes into HTML, and only http and https links are made clic
 from __future__ import annotations
 
 import html
+import re
 from dataclasses import dataclass, field
 from datetime import date as date_type
 from urllib.parse import urlparse
@@ -30,6 +31,26 @@ KIND_LABEL = {"repo": "repository", "paper": "paper", "model": "model"}
 
 REPO_URL = "https://github.com/HEX-1000/research-radar"
 TELEGRAM_LIMIT = 4000  # the API allows 4096 characters per message
+
+
+_QUERY_WARNING = re.compile(r"^(?P<source>[\w-]+): (?:query|topic) '(?P<what>[^']+)': (?P<why>.+)$")
+
+
+def condense_warnings(warnings: list[str]) -> list[str]:
+    """Five searches that failed for the same reason are one line, not five."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    others: list[str] = []
+    for warning in warnings:
+        match = _QUERY_WARNING.match(warning)
+        if match:
+            groups.setdefault((match["source"], match["why"]), []).append(match["what"])
+        else:
+            others.append(warning)
+    lines = []
+    for (source, why), names in groups.items():
+        noun = "search" if len(names) == 1 else "searches"
+        lines.append(f"{source}: {len(names)} {noun} failed ({', '.join(names)}): {why}")
+    return lines + others
 
 
 def safe_url(url: str) -> str:
@@ -110,7 +131,7 @@ class Digest:
 
     def footer_notes(self) -> list[str]:
         notes = [f"Source {s.source} was skipped: {s.reason}" for s in self.skipped]
-        notes.extend(self.warnings)
+        notes.extend(condense_warnings(self.warnings))
         if self.ranking == "keywords":
             notes.append("Ranked by keyword matching because the embedding model was not available.")
         return notes
@@ -212,7 +233,8 @@ def render_telegram(digest: Digest) -> list[str]:
         blocks.append("Also matched, probably not for you:\n" + "\n".join(rows))
     notes = digest.footer_notes()
     if notes:
-        blocks.append("Notes:\n" + "\n".join("- " + _tg(n) for n in notes))
+        # <code> keeps Telegram from turning host names such as api.github.com into links
+        blocks.append("Notes:\n" + "\n".join("- <code>" + _tg(n) + "</code>" for n in notes))
 
     messages: list[str] = []
     current = ""
