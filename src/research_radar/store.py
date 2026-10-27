@@ -49,6 +49,16 @@ class Store:
     def save_last_runs(self, runs: dict[str, str]) -> None:
         self._write(self.dir / "last_run.json", runs)
 
+    # fingerprints of the topics at the last scan, to notice new or edited ones ------------
+
+    def topic_marks(self) -> dict[str, str] | None:
+        """None when no scan has recorded them yet."""
+        data = self._read(self.dir / "topics.json", None)
+        return data if isinstance(data, dict) else None
+
+    def save_topic_marks(self, marks: dict[str, str]) -> None:
+        self._write(self.dir / "topics.json", marks)
+
     # vectors of reported items (needed to learn from votes) --------------------------
 
     def vectors(self) -> dict[str, list[float]]:

@@ -283,7 +283,7 @@ class RadarApp(App):
         self.render_day()
         self.refresh_ollama_dot()
         for text, severity in self.startup_notes:
-            self.notify(text, severity=severity, timeout=10)
+            self.notify(text, severity=severity, timeout=20 if "\n" in text else 10)
         if self.example_topics:
             self.notify(EXAMPLE_NOTICE, severity="warning", timeout=20)
         # The catch-up scan waits for the Ollama check: without Ollama it would spend today's
@@ -505,6 +505,8 @@ class RadarApp(App):
         message = f"Scan done: {len(result.new_reports)} new items."
         if result.ranking == "keywords":
             message += " Matched by keywords, without Ollama."
+        if result.backfilled:
+            message += " Looked back for: " + ", ".join(result.backfilled) + "."
         if result.skipped:
             message += " Skipped: " + ", ".join(s.source for s in result.skipped) + "."
         for line in describe(result.deliveries):

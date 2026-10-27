@@ -106,4 +106,5 @@ if ($Notes.Count -eq 0) {
 }
 Write-Host ""
 Write-Host "Next: write your own topics in $Interests (the two topics in it are examples), then open Research Radar from the desktop icon."
-Write-Host "Commands in a terminal: .venv\Scripts\radar.exe followed by doctor, scan, send or update."
+Write-Host "To get a scan every day without opening the app (optional): .venv\Scripts\radar.exe schedule on"
+Write-Host "Commands in a terminal: .venv\Scripts\radar.exe followed by doctor, scan, send, schedule or update."

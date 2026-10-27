@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
-from .config import Config
+from .config import Config, Topic
 from .deliver import DeliveryResult, deliver_pending, write_digest_file
 from .http import Http, SourceError
 from .llm import Ollama, OllamaError
@@ -35,6 +37,7 @@ class RunResult:
     deliveries: list[DeliveryResult] = field(default_factory=list)
     fetched: int = 0
     explain: list[Scored] = field(default_factory=list)
+    backfilled: list[str] = field(default_factory=list)  # new or changed topics that got a look back
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -56,6 +59,13 @@ def window_start(cfg: Config, last_run: str | None, now: datetime, days: int | N
     if previous is None:
         return now - timedelta(days=int(cfg.settings["first_run_days"]))
     return max(previous, earliest)
+
+
+def topic_fingerprint(topic: Topic) -> str:
+    """Changes when the text of a topic or its per source queries change."""
+    payload = [topic.description.strip(), topic.keywords, topic.exclude, topic.options]
+    text = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _noop(_: str) -> None:
@@ -107,19 +117,25 @@ def _scan(
     last_runs = store.last_runs()
     seen = store.seen()
 
+    # Topics that are new or were edited since the last scan get a one time look back, because
+    # the window of a source only reaches back to the last scan. The first scan after the
+    # upgrade to this behaviour just records the topics, so nothing is fetched twice.
+    marks = store.topic_marks()
+    current = {t.name: topic_fingerprint(t) for t in cfg.topics}
+    look_back = int(cfg.settings["first_run_days"])
+    explicit_short = days is not None and days < look_back
+    pending = [] if marks is None else [t for t in cfg.topics if marks.get(t.name) != current[t.name]]
+
     # 1. Fetch -------------------------------------------------------------------
     fetched: dict[str, Item] = {}
     advanced: dict[str, str] = {}
+    windows: dict[str, datetime] = {}
     for name, fetch in SOURCES.items():
         if not cfg.source_enabled(name):
             continue
         progress(f"Reading {name}")
-        ctx = FetchContext(
-            config=cfg,
-            http=http,
-            since=window_start(cfg, last_runs.get(name), now, days),
-            until=now,
-        )
+        windows[name] = window_start(cfg, last_runs.get(name), now, days)
+        ctx = FetchContext(config=cfg, http=http, since=windows[name], until=now)
         try:
             for item in fetch(ctx):
                 fetched.setdefault(item.url, item)
@@ -129,6 +145,35 @@ def _scan(
         result.warnings.extend(ctx.warnings)
         if not ctx.warnings:  # a source with failed requests keeps its old window
             advanced[name] = now.isoformat()
+
+    only_for_new: set[str] = set()
+    looked_back = False
+    if pending and not explicit_short:
+        reached = False
+        back_cfg = replace(cfg, topics=pending)
+        back_start = now - timedelta(days=look_back)
+        failed = False
+        for name, fetch in SOURCES.items():
+            if name not in windows or back_start >= windows[name]:
+                continue  # disabled, or the normal window already reaches that far
+            progress(f"Looking back {look_back} days for new topics: {name}")
+            reached = True
+            ctx = FetchContext(config=back_cfg, http=http, since=back_start, until=windows[name])
+            try:
+                for item in fetch(ctx):
+                    if item.url not in fetched:
+                        fetched[item.url] = item
+                        only_for_new.add(item.url)
+            except SourceError:
+                failed = True
+                continue
+            if ctx.warnings:
+                failed = True
+        looked_back = not failed
+        if failed:
+            result.warnings.append("Could not look back for new topics on every source; trying again at the next scan.")
+        elif reached:
+            result.backfilled = [t.name for t in pending]
     result.fetched = len(fetched)
 
     fresh = [item for url, item in fetched.items() if url not in seen]
@@ -137,23 +182,33 @@ def _scan(
     llm_ready = use_llm and ollama.ping()
     likes, dislikes = store.vote_vectors()
     scored: list[Scored] = []
+
+    def rank_all(embed) -> tuple[list[Scored], str]:
+        # Items found only by the look back are compared with the new topics alone, so the
+        # look back cannot bring up older leftovers for topics that have not changed.
+        kept = [i for i in fresh if i.url not in only_for_new]
+        extra = [i for i in fresh if i.url in only_for_new]
+        options = dict(
+            embed=embed,
+            global_exclude=cfg.exclude,
+            likes=likes if embed else None,
+            dislikes=dislikes if embed else None,
+            feedback_weight=float(cfg.settings["feedback_weight"]),
+        )
+        ranked, mode = rank(kept, cfg.topics, **options)
+        if extra:
+            more, _ = rank(extra, pending, **options)
+            ranked = sorted(ranked + more, key=lambda s: s.score, reverse=True)
+        return ranked, mode
+
     if fresh:
         progress(f"Scoring {len(fresh)} items")
-        embed = ollama.embed if llm_ready else None
         try:
-            scored, result.ranking = rank(
-                fresh,
-                cfg.topics,
-                embed=embed,
-                global_exclude=cfg.exclude,
-                likes=likes,
-                dislikes=dislikes,
-                feedback_weight=float(cfg.settings["feedback_weight"]),
-            )
+            scored, result.ranking = rank_all(ollama.embed if llm_ready else None)
         except OllamaError as exc:
             result.warnings.append(f"Embedding failed ({exc}); used keyword matching instead.")
             llm_ready = False
-            scored, result.ranking = rank(fresh, cfg.topics, embed=None, global_exclude=cfg.exclude)
+            scored, result.ranking = rank_all(None)
     else:
         result.ranking = "embeddings" if llm_ready else "keywords"
     if not llm_ready and use_llm:
@@ -222,6 +277,11 @@ def _scan(
     )
     last_runs.update(advanced)
     store.save_last_runs(last_runs)
+    covered = [] if (pending and (explicit_short or not looked_back)) else pending
+    covered_names = {t.name for t in covered}
+    store.save_topic_marks(
+        {t.name: current[t.name] for t in cfg.topics if marks is None or t not in pending or t.name in covered_names}
+    )
     result.note_path = write_note(
         cfg, local_date, result.all_reports, result.skipped, result.warnings, result.ranking
     )

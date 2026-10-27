@@ -22,7 +22,7 @@ def test_no_em_dash_characters():
 
 def test_gitignore_protects_personal_files():
     text = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    for pattern in ("interests.yaml", "notes/", "state/", ".env", ".update_backup/"):
+    for pattern in ("interests.yaml", "notes/", "state/", "logs/", ".env", ".update_backup/"):
         assert pattern in text.splitlines()
 
 
