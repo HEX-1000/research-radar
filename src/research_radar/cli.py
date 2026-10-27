@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_p.add_argument("--dry-run", action="store_true", help="write the digest page and show what would be sent, send nothing")
     send_p.add_argument("--test", action="store_true", help="send a short test message through each enabled channel")
 
+    sub.add_parser("shortcut", help="put a Research Radar icon on the Windows desktop")
     sub.add_parser("telegram-chat", help="find your Telegram chat id (write to your bot first)")
     sub.add_parser("doctor", help="check Ollama, every source and the delivery channels on this machine")
     return parser
@@ -97,6 +98,20 @@ def cmd_send(cfg: Config, date: str | None, dry_run: bool, test: bool) -> int:
     for line in describe(results):
         print(line)
     return 0 if all(r.ok for r in results) else 1
+
+
+def cmd_shortcut(home_arg: str | None) -> int:
+    from .shortcut import ShortcutError, create_shortcut
+
+    home = resolve_home(home_arg)
+    try:
+        path = create_shortcut(home)
+    except ShortcutError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Created {path}")
+    print("Double-click it to open Research Radar. To keep it on the taskbar, right-click it and choose Pin to taskbar.")
+    return 0
 
 
 def cmd_telegram_chat(cfg: Config) -> int:
@@ -238,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if command == "init":
             return cmd_init(args.home)
+        if command == "shortcut":
+            return cmd_shortcut(args.home)
         cfg = _load(args.home)
         if command == "scan":
             return cmd_scan(cfg, args.days, args.no_llm, args.explain)

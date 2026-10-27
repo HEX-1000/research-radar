@@ -46,6 +46,7 @@ If `chat_model` is empty in your settings, the first installed non-embedding mod
 radar init      # creates ~/.research-radar/interests.yaml from the example
 radar doctor    # checks Ollama and every source from your machine
 radar           # opens the terminal interface
+radar shortcut  # Windows: puts an icon on the desktop
 ```
 
 Edit `interests.yaml` before the first real scan. The example has two topics. Replace them with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. The file documents every setting.
@@ -63,6 +64,14 @@ To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
 | `q` | quit |
 
 On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`). Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model.
+
+## A desktop icon (Windows)
+
+```
+radar shortcut
+```
+
+puts a Research Radar icon on your desktop. A double-click opens the terminal interface in Windows Terminal when it is installed (colors and borders look best there), or in the normal console otherwise. The icon carries the path of your data folder, so it works even when the `RADAR_HOME` variable is not visible to it. Run the command from the environment where you installed the program. To keep the icon on the taskbar, right-click it and choose Pin to taskbar. If you move the repository or rebuild the virtual environment, run `radar shortcut` again.
 
 ## The daily digest
 
