@@ -1,0 +1,28 @@
+# Personal data. The app keeps these in its data home, but if you ever run it
+# from inside a clone, none of it can be committed by accident.
+interests.yaml
+notes/
+state/
+feedback*.json
+feedback*.md
+.env
+.env.*
+*.local.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

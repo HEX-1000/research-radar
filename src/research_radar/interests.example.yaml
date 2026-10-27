@@ -1,0 +1,74 @@
+# Research Radar: your interests.
+#
+# This file is the whole guide. Edit it, add topics, remove topics. Nothing in
+# here ever leaves your computer. `radar init` copies it to your data home.
+#
+# How a scan works: each source fetches new items for your topics, a local
+# embedding model scores every item against the topic descriptions below, and
+# only the best few are summarised by a local chat model. Write the
+# description of a topic the way you would explain it to a colleague: what you
+# work on, which tools you use, what you want to hear about.
+
+settings:
+  ollama_url: http://localhost:11434
+  embed_model: nomic-embed-text
+  chat_model: ""            # empty = use the first installed non-embedding model
+  summary_language: English
+  min_score: 0.55           # lower it to see more, raise it to see less (try: radar scan --explain)
+  max_items: 8              # per scan, all topics together
+  max_per_topic: 3
+  first_run_days: 3         # how far back the very first scan looks
+  max_catchup_days: 14      # a long break never fetches more than this
+  auto_scan_on_launch: true # the TUI catches up when you open it
+  github_token_env: GITHUB_TOKEN   # name of the environment variable, optional
+  # notes_dir: ~/research-radar-notes   # default: <data home>/notes
+
+# Phrases that drop an item from every topic.
+exclude:
+  - telemetry enabled by default
+  - cracked
+  - license bypass
+
+sources:
+  github:
+    enabled: true
+    min_stars: 5
+  arxiv:
+    enabled: true
+  huggingface-papers:
+    enabled: true
+  huggingface-models:
+    enabled: true
+    limit: 25
+  forgejo:             # Codeberg and any Gitea or Forgejo server share one API
+    enabled: true
+    instances: [codeberg.org]
+
+topics:
+  - name: Local-first AI tools
+    description: >
+      Software that runs language models and retrieval on my own machine
+      without cloud services. Local inference servers, embedding models,
+      SQLite or other embedded search, context and token reduction for coding
+      assistants, MCP servers.
+    keywords: [ollama, local llm, embeddings, retrieval, mcp, sqlite fts]
+    exclude: [crypto trading bot]
+    github:
+      queries: [local llm, mcp server, retrieval]
+    arxiv:
+      categories: [cs.IR, cs.CL]
+      terms: [retrieval, context compression, long context]
+
+  - name: Geospatial machine learning
+    description: >
+      Satellite imagery, elevation models and terrain analysis with open data
+      and open tools. Sentinel and Landsat, STAC catalogs, change detection,
+      segmentation of remote sensing images.
+    keywords: [remote sensing, sentinel-2, stac, dem, segmentation]
+    github:
+      queries: [remote sensing, stac, satellite imagery]
+    arxiv:
+      categories: [eess.IV, cs.CV]
+      terms: [remote sensing, satellite]
+    forgejo:
+      queries: [remote sensing]
