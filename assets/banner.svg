@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+<rect width="1280" height="640" fill="#0A0806"/>
+<path d="M94,48 L48,48 L48,94" fill="none" stroke="#FF8C00" stroke-width="6" stroke-linecap="square"/><path d="M1186,48 L1232,48 L1232,94" fill="none" stroke="#FF8C00" stroke-width="6" stroke-linecap="square"/><path d="M1186,592 L1232,592 L1232,546" fill="none" stroke="#FF8C00" stroke-width="6" stroke-linecap="square"/><path d="M94,592 L48,592 L48,546" fill="none" stroke="#FF8C00" stroke-width="6" stroke-linecap="square"/>
+<circle cx="300" cy="320" r="93.0" fill="none" stroke="#FF8C00" stroke-opacity="0.55" stroke-width="3.7"/>
+<circle cx="300" cy="320" r="170.5" fill="none" stroke="#FF8C00" stroke-opacity="0.43" stroke-width="3.7"/>
+<circle cx="300" cy="320" r="248.0" fill="none" stroke="#FF8C00" stroke-opacity="0.31" stroke-width="3.7"/>
+<line x1="52.0" y1="320" x2="548.0" y2="320" stroke="#FF8C00" stroke-opacity=".28" stroke-width="2.5"/>
+<line x1="300" y1="72.0" x2="300" y2="568.0" stroke="#FF8C00" stroke-opacity=".28" stroke-width="2.5"/>
+<path d="M300,320 L488.3,158.6 A248.0,248.0 0 0 1 495.4,167.3 Z" fill="#FF8C00" fill-opacity="0.500"/>
+<path d="M300,320 L480.8,150.2 A248.0,248.0 0 0 1 488.3,158.6 Z" fill="#FF8C00" fill-opacity="0.470"/>
+<path d="M300,320 L472.9,142.2 A248.0,248.0 0 0 1 480.8,150.2 Z" fill="#FF8C00" fill-opacity="0.440"/>
+<path d="M300,320 L464.7,134.5 A248.0,248.0 0 0 1 472.9,142.2 Z" fill="#FF8C00" fill-opacity="0.411"/>
+<path d="M300,320 L456.1,127.3 A248.0,248.0 0 0 1 464.7,134.5 Z" fill="#FF8C00" fill-opacity="0.383"/>
+<path d="M300,320 L447.2,120.4 A248.0,248.0 0 0 1 456.1,127.3 Z" fill="#FF8C00" fill-opacity="0.355"/>
+<path d="M300,320 L438.0,113.9 A248.0,248.0 0 0 1 447.2,120.4 Z" fill="#FF8C00" fill-opacity="0.329"/>
+<path d="M300,320 L428.5,107.9 A248.0,248.0 0 0 1 438.0,113.9 Z" fill="#FF8C00" fill-opacity="0.303"/>
+<path d="M300,320 L418.7,102.3 A248.0,248.0 0 0 1 428.5,107.9 Z" fill="#FF8C00" fill-opacity="0.278"/>
+<path d="M300,320 L408.7,97.1 A248.0,248.0 0 0 1 418.7,102.3 Z" fill="#FF8C00" fill-opacity="0.253"/>
+<path d="M300,320 L398.5,92.4 A248.0,248.0 0 0 1 408.7,97.1 Z" fill="#FF8C00" fill-opacity="0.230"/>
+<path d="M300,320 L388.1,88.2 A248.0,248.0 0 0 1 398.5,92.4 Z" fill="#FF8C00" fill-opacity="0.207"/>
+<path d="M300,320 L377.5,84.4 A248.0,248.0 0 0 1 388.1,88.2 Z" fill="#FF8C00" fill-opacity="0.186"/>
+<path d="M300,320 L366.7,81.1 A248.0,248.0 0 0 1 377.5,84.4 Z" fill="#FF8C00" fill-opacity="0.165"/>
+<path d="M300,320 L355.8,78.4 A248.0,248.0 0 0 1 366.7,81.1 Z" fill="#FF8C00" fill-opacity="0.145"/>
+<path d="M300,320 L344.8,76.1 A248.0,248.0 0 0 1 355.8,78.4 Z" fill="#FF8C00" fill-opacity="0.126"/>
+<path d="M300,320 L333.7,74.3 A248.0,248.0 0 0 1 344.8,76.1 Z" fill="#FF8C00" fill-opacity="0.108"/>
+<path d="M300,320 L322.5,73.0 A248.0,248.0 0 0 1 333.7,74.3 Z" fill="#FF8C00" fill-opacity="0.092"/>
+<path d="M300,320 L311.3,72.3 A248.0,248.0 0 0 1 322.5,73.0 Z" fill="#FF8C00" fill-opacity="0.076"/>
+<path d="M300,320 L300.0,72.0 A248.0,248.0 0 0 1 311.3,72.3 Z" fill="#FF8C00" fill-opacity="0.061"/>
+<path d="M300,320 L288.7,72.3 A248.0,248.0 0 0 1 300.0,72.0 Z" fill="#FF8C00" fill-opacity="0.048"/>
+<path d="M300,320 L277.5,73.0 A248.0,248.0 0 0 1 288.7,72.3 Z" fill="#FF8C00" fill-opacity="0.036"/>
+<path d="M300,320 L266.3,74.3 A248.0,248.0 0 0 1 277.5,73.0 Z" fill="#FF8C00" fill-opacity="0.025"/>
+<path d="M300,320 L255.2,76.1 A248.0,248.0 0 0 1 266.3,74.3 Z" fill="#FF8C00" fill-opacity="0.016"/>
+<path d="M300,320 L244.2,78.4 A248.0,248.0 0 0 1 255.2,76.1 Z" fill="#FF8C00" fill-opacity="0.008"/>
+<path d="M300,320 L233.3,81.1 A248.0,248.0 0 0 1 244.2,78.4 Z" fill="#FF8C00" fill-opacity="0.003"/>
+<line x1="300" y1="320" x2="495.4" y2="167.3" stroke="#FFAA33" stroke-width="6.2" stroke-linecap="round"/>
+<circle cx="391.6" cy="202.7" r="33.5" fill="#FFAA33" fill-opacity=".18"/>
+<circle cx="391.6" cy="202.7" r="14.0" fill="#FFAA33" fill-opacity="1"/>
+<circle cx="292.5" cy="106.2" r="9.3" fill="#FFAA33" fill-opacity="0.55"/>
+<circle cx="218.5" cy="282.0" r="9.3" fill="#FFAA33" fill-opacity="0.55"/>
+<circle cx="300" cy="320" r="9.3" fill="#FFAA33"/>
+<g font-family="Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace">
+<text x="590" y="262" font-size="25" font-weight="700" letter-spacing="5" fill="#FF8C00">LOCAL-FIRST</text>
+<text x="590" y="340" font-size="76" font-weight="700" fill="#EDE6DA">Research</text>
+<text x="590" y="418" font-size="76" font-weight="700" fill="#EDE6DA">Radar</text>
+<text x="590" y="476" font-size="28" fill="#9C8F7E">A daily research digest, built on</text>
+<text x="590" y="512" font-size="28" fill="#9C8F7E">your own computer. No account.</text>
+<text x="590" y="566" font-size="20" fill="#FFAA33">GitHub · arXiv · Hugging Face · Codeberg</text>
+</g>
+</svg>

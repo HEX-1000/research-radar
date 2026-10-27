@@ -20,6 +20,7 @@ settings:
   first_run_days: 3         # how far back the very first scan looks
   max_catchup_days: 14      # a long break never fetches more than this
   auto_scan_on_launch: true # the TUI catches up when you open it
+  theme: hex-amber          # colors of the terminal interface; try textual-dark, nord, gruvbox
   github_token_env: GITHUB_TOKEN   # name of the environment variable, optional
   # notes_dir: ~/research-radar-notes   # default: <data home>/notes
 

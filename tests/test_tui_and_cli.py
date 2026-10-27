@@ -101,3 +101,25 @@ def test_cli_init_then_scan_without_config_errors(tmp_path, capsys):
     assert cli.main(["--home", str(tmp_path / "h"), "init"]) == 0
     assert (tmp_path / "h" / "interests.yaml").exists()
     init_home(tmp_path / "h")  # idempotent
+
+
+async def test_tui_uses_the_amber_theme_and_survives_an_unknown_theme_name(make_cfg):
+    app = RadarApp(make_cfg(auto_scan_on_launch=False), auto_scan=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.theme == "hex-amber"
+    odd = RadarApp(make_cfg(auto_scan_on_launch=False, theme="no-such-theme"), auto_scan=False)
+    async with odd.run_test() as pilot:
+        await pilot.pause()
+        assert odd.theme == "hex-amber"
+
+
+async def test_tui_list_shows_the_verdict_before_the_long_columns(make_cfg):
+    cfg = make_cfg(auto_scan_on_launch=False)
+    seed_today(cfg)
+    app = RadarApp(cfg, auto_scan=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        table = app.query_one("#list", DataTable)
+        labels = [str(c.label) for c in table.columns.values()]
+        assert labels == ["", "Verdict", "Topic", "Item"]

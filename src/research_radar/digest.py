@@ -240,6 +240,7 @@ CSS = """
   .text { color: #e6e9ed !important; }
   .muted { color: #9aa5b1 !important; }
   .link { color: #7db7f5 !important; }
+  .accent { color: #FFAA33 !important; }
   .b-install { background: #1d3a2a !important; color: #8fd6a9 !important; }
   .b-read { background: #1c3250 !important; color: #9cc3f2 !important; }
   .b-watch { background: #3d3014 !important; color: #f0c978 !important; }
@@ -350,8 +351,8 @@ def render_html(digest: Digest) -> str:
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="page" style="background:#f4f5f7;">'
         '<tr><td align="center" class="wrap" style="padding:24px 12px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;">'
-        f'<tr><td style="padding:0 2px 6px;font-family:{FONT};">'
-        '<div class="muted" style="font-size:12px;font-weight:700;letter-spacing:1px;color:#616e7c;">RESEARCH RADAR</div>'
+        f'<tr><td style="padding:14px 2px 6px;font-family:{FONT};border-top:4px solid #FF8C00;">'
+        '<div class="accent" style="font-size:12px;font-weight:700;letter-spacing:1px;color:#A85200;">\u250c RESEARCH RADAR</div>'
         f'<div class="text" style="font-size:24px;font-weight:700;line-height:1.3;color:#1f2933;margin-top:4px;">{_e(long_date(digest.date))}</div>'
         f'<div class="muted" style="font-size:14px;color:#616e7c;margin-top:4px;">{_e(digest.summary_line())}</div>'
         "</td></tr>"
