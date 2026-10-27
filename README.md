@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/banner.png" alt="Research Radar" width="720"></p>
+
 # research-radar
 
 A daily research radar for the terminal that runs on your own computer.

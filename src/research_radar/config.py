@@ -23,6 +23,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "first_run_days": 3,
     "max_catchup_days": 14,
     "auto_scan_on_launch": True,
+    "theme": "hex-amber",  # any Textual theme name works, for example textual-dark or nord
     "github_token_env": "GITHUB_TOKEN",
     "rising_days": 14,
     "feedback_weight": 0.2,

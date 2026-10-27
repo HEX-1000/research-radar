@@ -12,7 +12,8 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.theme import Theme
+from textual.widgets import DataTable, Footer, Static
 
 from .config import Config
 from .deliver import describe, write_digest_file
@@ -22,6 +23,42 @@ from .pipeline import RunResult, scan
 from .store import Store
 
 VOTE_MARK = {1: "+", -1: "-", 0: " "}
+VERDICT_STYLE = {"install": "bold #8BC48A", "read": "bold #FF8C00", "watch": "#FFAA33", "skip": "dim"}
+TOPIC_WIDTH = 18
+
+
+def short(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: width - 1] + "\u2026"
+
+# Near-black ground with amber accents. Choose another theme with settings.theme.
+HEX_THEME = Theme(
+    name="hex-amber",
+    primary="#FF8C00",
+    secondary="#FFAA33",
+    accent="#FFAA33",
+    foreground="#EDE6DA",
+    background="#0A0806",
+    surface="#13100C",
+    panel="#1B150F",
+    success="#8BC48A",
+    warning="#FFAA33",
+    error="#E5604D",
+    dark=True,
+)
+
+RADAR_ART = r"""
+        .  -  ~  -  .
+     .'       |       '.
+   .'         |         '.
+  /           |     o     \
+ |     .      |            |
+ |------------+------------|
+ |            |  o         |
+  \           |           /
+   '.         |    .    .'
+     '.       |       .'
+        ' -  . _ .  - '
+""".strip("\n")
 
 
 def needs_catch_up(cfg: Config, store: Store, today: date_type | None = None) -> bool:
@@ -46,8 +83,11 @@ def needs_catch_up(cfg: Config, store: Store, today: date_type | None = None) ->
 class RadarApp(App):
     TITLE = "Research Radar"
     CSS = """
+    #topbar { height: 2; border-bottom: solid $primary; padding: 0 1; }
+    #brand { width: 1fr; color: $primary; text-style: bold; height: 1; }
+    #daymeta { width: auto; color: $text-muted; height: 1; }
     #body { height: 1fr; }
-    #list { width: 55%; }
+    #list { width: 55%; overflow-x: hidden; }
     #detail-box { width: 45%; border-left: solid $primary; padding: 0 1; }
     #status { height: 1; padding: 0 1; color: $text-muted; }
     """
@@ -76,7 +116,9 @@ class RadarApp(App):
     # layout ---------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        with Horizontal(id="topbar"):
+            yield Static("\u250c RESEARCH RADAR", id="brand")
+            yield Static("", id="daymeta")
         with Horizontal(id="body"):
             yield DataTable(id="list", cursor_type="row", zebra_stripes=True)
             with VerticalScroll(id="detail-box"):
@@ -85,8 +127,16 @@ class RadarApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.register_theme(HEX_THEME)
+        try:
+            self.theme = str(self.cfg.settings.get("theme") or "hex-amber")
+        except Exception:  # an unknown theme name must not stop the app
+            self.theme = "hex-amber"
         table = self.query_one("#list", DataTable)
-        table.add_columns("", "Topic", "Item", "Verdict")
+        table.add_column("", width=1)
+        table.add_column("Verdict", width=7)
+        table.add_column("Topic", width=TOPIC_WIDTH)
+        table.add_column("Item")
         self.refresh_dates(jump_to_latest=True)
         self.render_day()
         if self.auto_scan and needs_catch_up(self.cfg, self.store):
@@ -112,15 +162,22 @@ class RadarApp(App):
         reports: list[Report] = sorted(day["reports"], key=lambda r: (r.topic, r.rising, -r.score))
         self.reports = {r.url: r for r in reports}
         self.sub_title = self.current_date
+        count = len(reports)
+        self.query_one("#daymeta", Static).update(
+            f"{self.current_date}  \u00b7  {count} item{'s' if count != 1 else ''} \u2518"
+        )
         table = self.query_one("#list", DataTable)
         table.clear()
         for report in reports:
             title = f"{plain_title(report.title)} (rising)" if report.rising else plain_title(report.title)
-            table.add_row(VOTE_MARK[report.vote], report.topic, title, report.verdict, key=report.url)
+            verdict = Text("rising" if report.rising else report.verdict, style=VERDICT_STYLE.get(report.verdict, ""))
+            table.add_row(VOTE_MARK[report.vote], verdict, short(report.topic, TOPIC_WIDTH), title, key=report.url)
         if reports:
             self.show_detail(reports[0])
         else:
-            self.query_one("#detail", Static).update("Nothing here yet. Press s to scan.")
+            art = Text(RADAR_ART + "\n\n", style="#B35900")
+            art.append("Nothing here yet. Press s to scan.", style="bold")
+            self.query_one("#detail", Static).update(art)
 
     def show_detail(self, report: Report) -> None:
         text = Text()

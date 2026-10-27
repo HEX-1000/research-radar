@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<rect width="512" height="512" fill="#0A0806"/>
+<circle cx="256" cy="256" r="67.2" fill="none" stroke="#FF8C00" stroke-opacity="0.55" stroke-width="2.7"/>
+<circle cx="256" cy="256" r="123.2" fill="none" stroke="#FF8C00" stroke-opacity="0.43" stroke-width="2.7"/>
+<circle cx="256" cy="256" r="179.2" fill="none" stroke="#FF8C00" stroke-opacity="0.31" stroke-width="2.7"/>
+<line x1="76.8" y1="256" x2="435.2" y2="256" stroke="#FF8C00" stroke-opacity=".28" stroke-width="1.8"/>
+<line x1="256" y1="76.8" x2="256" y2="435.2" stroke="#FF8C00" stroke-opacity=".28" stroke-width="1.8"/>
+<path d="M256,256 L392.1,139.4 A179.2,179.2 0 0 1 397.2,145.7 Z" fill="#FF8C00" fill-opacity="0.500"/>
+<path d="M256,256 L386.6,133.3 A179.2,179.2 0 0 1 392.1,139.4 Z" fill="#FF8C00" fill-opacity="0.470"/>
+<path d="M256,256 L380.9,127.5 A179.2,179.2 0 0 1 386.6,133.3 Z" fill="#FF8C00" fill-opacity="0.440"/>
+<path d="M256,256 L375.0,122.0 A179.2,179.2 0 0 1 380.9,127.5 Z" fill="#FF8C00" fill-opacity="0.411"/>
+<path d="M256,256 L368.8,116.7 A179.2,179.2 0 0 1 375.0,122.0 Z" fill="#FF8C00" fill-opacity="0.383"/>
+<path d="M256,256 L362.3,111.8 A179.2,179.2 0 0 1 368.8,116.7 Z" fill="#FF8C00" fill-opacity="0.355"/>
+<path d="M256,256 L355.7,107.1 A179.2,179.2 0 0 1 362.3,111.8 Z" fill="#FF8C00" fill-opacity="0.329"/>
+<path d="M256,256 L348.8,102.7 A179.2,179.2 0 0 1 355.7,107.1 Z" fill="#FF8C00" fill-opacity="0.303"/>
+<path d="M256,256 L341.8,98.7 A179.2,179.2 0 0 1 348.8,102.7 Z" fill="#FF8C00" fill-opacity="0.278"/>
+<path d="M256,256 L334.6,94.9 A179.2,179.2 0 0 1 341.8,98.7 Z" fill="#FF8C00" fill-opacity="0.253"/>
+<path d="M256,256 L327.2,91.5 A179.2,179.2 0 0 1 334.6,94.9 Z" fill="#FF8C00" fill-opacity="0.230"/>
+<path d="M256,256 L319.6,88.5 A179.2,179.2 0 0 1 327.2,91.5 Z" fill="#FF8C00" fill-opacity="0.207"/>
+<path d="M256,256 L312.0,85.8 A179.2,179.2 0 0 1 319.6,88.5 Z" fill="#FF8C00" fill-opacity="0.186"/>
+<path d="M256,256 L304.2,83.4 A179.2,179.2 0 0 1 312.0,85.8 Z" fill="#FF8C00" fill-opacity="0.165"/>
+<path d="M256,256 L296.3,81.4 A179.2,179.2 0 0 1 304.2,83.4 Z" fill="#FF8C00" fill-opacity="0.145"/>
+<path d="M256,256 L288.3,79.7 A179.2,179.2 0 0 1 296.3,81.4 Z" fill="#FF8C00" fill-opacity="0.126"/>
+<path d="M256,256 L280.3,78.5 A179.2,179.2 0 0 1 288.3,79.7 Z" fill="#FF8C00" fill-opacity="0.108"/>
+<path d="M256,256 L272.2,77.5 A179.2,179.2 0 0 1 280.3,78.5 Z" fill="#FF8C00" fill-opacity="0.092"/>
+<path d="M256,256 L264.1,77.0 A179.2,179.2 0 0 1 272.2,77.5 Z" fill="#FF8C00" fill-opacity="0.076"/>
+<path d="M256,256 L256.0,76.8 A179.2,179.2 0 0 1 264.1,77.0 Z" fill="#FF8C00" fill-opacity="0.061"/>
+<path d="M256,256 L247.9,77.0 A179.2,179.2 0 0 1 256.0,76.8 Z" fill="#FF8C00" fill-opacity="0.048"/>
+<path d="M256,256 L239.8,77.5 A179.2,179.2 0 0 1 247.9,77.0 Z" fill="#FF8C00" fill-opacity="0.036"/>
+<path d="M256,256 L231.7,78.5 A179.2,179.2 0 0 1 239.8,77.5 Z" fill="#FF8C00" fill-opacity="0.025"/>
+<path d="M256,256 L223.7,79.7 A179.2,179.2 0 0 1 231.7,78.5 Z" fill="#FF8C00" fill-opacity="0.016"/>
+<path d="M256,256 L215.7,81.4 A179.2,179.2 0 0 1 223.7,79.7 Z" fill="#FF8C00" fill-opacity="0.008"/>
+<path d="M256,256 L207.8,83.4 A179.2,179.2 0 0 1 215.7,81.4 Z" fill="#FF8C00" fill-opacity="0.003"/>
+<line x1="256" y1="256" x2="397.2" y2="145.7" stroke="#FFAA33" stroke-width="4.5" stroke-linecap="round"/>
+<circle cx="322.2" cy="171.3" r="24.2" fill="#FFAA33" fill-opacity=".18"/>
+<circle cx="322.2" cy="171.3" r="10.1" fill="#FFAA33" fill-opacity="1"/>
+<circle cx="250.6" cy="101.5" r="6.7" fill="#FFAA33" fill-opacity="0.55"/>
+<circle cx="197.1" cy="228.5" r="6.7" fill="#FFAA33" fill-opacity="0.55"/>
+<circle cx="256" cy="256" r="6.7" fill="#FFAA33"/>
+<path d="M132.8,88.0 L88.0,88.0 L88.0,132.8" fill="none" stroke="#FF8C00" stroke-width="6.7" stroke-linecap="square" stroke-linejoin="miter"/>
+<path d="M379.2,88.0 L424.0,88.0 L424.0,132.8" fill="none" stroke="#FF8C00" stroke-width="6.7" stroke-linecap="square" stroke-linejoin="miter"/>
+<path d="M379.2,424.0 L424.0,424.0 L424.0,379.2" fill="none" stroke="#FF8C00" stroke-width="6.7" stroke-linecap="square" stroke-linejoin="miter"/>
+<path d="M132.8,424.0 L88.0,424.0 L88.0,379.2" fill="none" stroke="#FF8C00" stroke-width="6.7" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>
