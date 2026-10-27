@@ -173,6 +173,14 @@ def make_handler(calls: list[str] | None = None, fail: set[str] | None = None, r
     return handler
 
 
+@pytest.fixture(autouse=True)
+def ollama_has_every_model(monkeypatch):
+    """The interface asks Ollama for its models on start. Tests never reach a real Ollama."""
+    from research_radar import tui
+
+    monkeypatch.setattr(tui, "default_probe", lambda cfg: ["nomic-embed-text:latest", "fake-chat:latest"])
+
+
 @pytest.fixture
 def http_factory():
     clients: list[Http] = []

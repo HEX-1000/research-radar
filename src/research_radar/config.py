@@ -23,6 +23,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "first_run_days": 3,
     "max_catchup_days": 14,
     "auto_scan_on_launch": True,
+    "auto_update": True,  # check GitHub for a newer version when the interface opens (see update.py)
     "theme": "hex-amber",  # any Textual theme name works, for example textual-dark or nord
     "github_token_env": "GITHUB_TOKEN",
     "rising_days": 14,
@@ -130,6 +131,23 @@ def resolve_home(explicit: str | os.PathLike[str] | None = None) -> Path:
 
 def example_text() -> str:
     return resources.files("research_radar").joinpath("interests.example.yaml").read_text(encoding="utf-8")
+
+
+def _same_text(a: str, b: str) -> bool:
+    return " ".join(a.split()) == " ".join(b.split())
+
+
+def uses_example_topics(cfg: Config) -> bool:
+    """True while every topic is still one of the examples that `radar init` copied, unedited."""
+    data = yaml.safe_load(example_text()) or {}
+    examples = {
+        str(t.get("name", "")).strip(): str(t.get("description", ""))
+        for t in data.get("topics", [])
+        if isinstance(t, dict)
+    }
+    return bool(cfg.topics) and all(
+        t.name in examples and _same_text(t.description, examples[t.name]) for t in cfg.topics
+    )
 
 
 def init_home(home: Path) -> Path:

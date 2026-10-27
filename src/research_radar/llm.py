@@ -3,16 +3,113 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from . import __version__
 
+# Suggested when no chat model is installed. Any chat model works.
+SUGGESTED_CHAT_MODEL = "qwen3.5:9b"
+
 
 class OllamaError(Exception):
     """Ollama is not reachable or answered with something unusable."""
+
+
+def is_embedding_model(name: str) -> bool:
+    lowered = name.lower()
+    return "embed" in lowered or "bert" in lowered
+
+
+def has_model(names: list[str], model: str) -> bool:
+    """True when Ollama lists the model. A name without a tag means the :latest tag, as in Ollama."""
+    if not model:
+        return False
+    return model in names or (":" not in model and f"{model}:latest" in names)
+
+
+def ollama_installed() -> bool:
+    """True when the ollama program is on this computer (on PATH or in its usual Windows folder)."""
+    if shutil.which("ollama"):
+        return True
+    local = os.environ.get("LOCALAPPDATA")
+    return bool(local) and (Path(local) / "Programs" / "Ollama" / "ollama.exe").exists()
+
+
+def _is_local(url: str) -> bool:
+    return (urlparse(url).hostname or "") in ("localhost", "127.0.0.1", "::1")
+
+
+def ollama_advice(
+    settings: dict[str, Any],
+    names: list[str] | None,
+    *,
+    retry_hint: str = "press s",
+    installed: bool | None = None,
+) -> tuple[str, list[tuple[str, str]]]:
+    """What is missing on the Ollama side, in words a new user can act on.
+
+    names is the list from Ollama's /api/tags, or None when Ollama could not be reached.
+    Returns a state and (message, severity) pairs. States:
+      ok        everything a scan uses is there
+      no-chat   no usable chat model: items are described by their first sentence
+      no-embed  the embedding model is missing: a scan can only match by keywords
+      down      Ollama is not reachable: a scan can only match by keywords
+    """
+    url = str(settings.get("ollama_url") or "")
+    if names is None:
+        if installed is None:
+            installed = ollama_installed() if _is_local(url) else True
+        if not installed:
+            return "down", [(
+                "Ollama is not installed, so a scan can only match by keywords. "
+                "Get it from https://ollama.com/download",
+                "error",
+            )]
+        return "down", [(
+            f"Ollama is not reachable at {url}, so a scan can only match by keywords. "
+            f"Start Ollama (on Windows: from the Start menu), then {retry_hint}.",
+            "error",
+        )]
+
+    messages: list[tuple[str, str]] = []
+    state = "ok"
+    embed = str(settings.get("embed_model") or "")
+    if not has_model(names, embed):
+        state = "no-embed"
+        messages.append((
+            f"The embedding model {embed} is not downloaded, so a scan can only match by keywords. "
+            f"To get it, run: ollama pull {embed}",
+            "warning",
+        ))
+
+    chat = str(settings.get("chat_model") or "")
+    installed_chat = [n for n in names if not is_embedding_model(n)]
+    if chat and not has_model(names, chat):
+        if state == "ok":
+            state = "no-chat"
+        others = [n for n in installed_chat if n != chat]
+        alternative = f"Set chat_model to {others[0]} in interests.yaml, or run" if others else "To get it, run"
+        messages.append((
+            f"The chat model {chat} is not downloaded, so items are described by their first sentence. "
+            f"{alternative}: ollama pull {chat}",
+            "warning",
+        ))
+    elif not chat and not installed_chat:
+        if state == "ok":
+            state = "no-chat"
+        messages.append((
+            "No chat model is installed, so items are described by their first sentence. "
+            f"Any chat model works, for example: ollama pull {SUGGESTED_CHAT_MODEL}",
+            "warning",
+        ))
+    return state, messages
 
 
 class Ollama:
@@ -68,8 +165,7 @@ class Ollama:
         if self.chat_model:
             return self.chat_model
         for name in self.models():
-            lowered = name.lower()
-            if "embed" in lowered or "bert" in lowered:
+            if is_embedding_model(name):
                 continue
             self.chat_model = name
             return name

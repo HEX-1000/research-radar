@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -10,7 +12,10 @@ from . import __version__
 from .config import Config, ConfigError, init_home, load_config, resolve_home
 from .deliver import DeliveryError, describe
 from .http import Http, SourceError
-from .llm import Ollama, OllamaError
+from .llm import Ollama, OllamaError, ollama_advice
+
+# Set for the copy started right after an update, so it shows a notice and does not check again.
+UPDATED_ENV = "RADAR_UPDATED"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,7 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("shortcut", help="put a Research Radar icon on the Windows desktop")
     sub.add_parser("telegram-chat", help="find your Telegram chat id (write to your bot first)")
-    sub.add_parser("doctor", help="check Ollama, every source and the delivery channels on this machine")
+    doctor_p = sub.add_parser("doctor", help="check Ollama, every source and the delivery channels on this machine")
+    doctor_p.add_argument("--local", action="store_true", help="check only Ollama and its models, nothing on the internet")
+    sub.add_parser("update", help="install a newer version from GitHub now (the interface also checks when it opens)")
     return parser
 
 
@@ -144,7 +151,7 @@ def _probe(label: str, fn) -> bool:
     return True
 
 
-def cmd_doctor(cfg: Config) -> int:
+def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
     from .sources import arxiv, forgejo, github, huggingface
 
     results: list[bool] = []
@@ -152,15 +159,21 @@ def cmd_doctor(cfg: Config) -> int:
     ollama = Ollama(s["ollama_url"], s["embed_model"], s["chat_model"])
 
     def check_ollama() -> str:
-        names = ollama.models()
-        if not any(n == s["embed_model"] or n.startswith(s["embed_model"] + ":") for n in names):
-            raise OllamaError(f"embedding model '{s['embed_model']}' is not installed (ollama pull {s['embed_model']})")
+        try:
+            names = ollama.models()
+        except OllamaError:
+            names = None
+        _, advice = ollama_advice(s, names, retry_hint="run radar doctor again")
+        if advice:
+            raise OllamaError("\n      ".join(text for text, _ in advice))
         chat = ollama.resolve_chat_model()
         vector = ollama.embed(["test"], "query")[0]
         return f"embedding model ok ({len(vector)} dimensions), chat model '{chat}'"
 
     results.append(_probe(f"ollama at {s['ollama_url']}", check_ollama))
     ollama.close()
+    if local_only:
+        return 0 if all(results) else 1
 
     http = Http(github_token=cfg.github_token())
     now = datetime.now(timezone.utc)
@@ -240,14 +253,47 @@ def cmd_doctor(cfg: Config) -> int:
     return 0 if all(results) else 1
 
 
-def cmd_tui(cfg: Config) -> int:
+def cmd_update() -> int:
+    from .update import check_and_update
+    from .update import describe as describe_update
+
+    result = check_and_update()
+    print(describe_update(result))
+    return 0 if result.status in ("current", "updated", "offline") else 1
+
+
+def auto_update(argv: list[str]) -> tuple[int | None, list[tuple[str, str]]]:
+    """Look for a newer version before the interface opens (see update.py).
+
+    Returns an exit code when an update was installed and the new copy already ran in this
+    process's place, else None, plus notices for the interface. Never raises."""
+    try:
+        from .update import check_and_update
+
+        result = check_and_update()
+    except Exception:
+        return None, []
+    if result.status == "updated":
+        label = f"{result.old} to {result.new}"
+        print(f"Research Radar: updated {label}. Starting the new version...", flush=True)
+        env = dict(os.environ, **{UPDATED_ENV: label})
+        return subprocess.call([sys.executable, "-m", "research_radar", *argv], env=env), []
+    if result.status == "available":
+        return None, [(f"Research Radar {result.new} is available. Update with: {result.message}", "information")]
+    if result.status in ("failed", "skipped") and result.message:
+        return None, [(f"Update check: {result.message}. Still on {result.old}.", "warning")]
+    return None, []
+
+
+def cmd_tui(cfg: Config, notes: list[tuple[str, str]] | None = None) -> int:
     from .tui import RadarApp
 
-    RadarApp(cfg).run()
+    RadarApp(cfg, notes=notes).run()
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
     command = args.command or "tui"
     try:
@@ -255,16 +301,26 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_init(args.home)
         if command == "shortcut":
             return cmd_shortcut(args.home)
+        if command == "update":
+            return cmd_update()
         cfg = _load(args.home)
         if command == "scan":
             return cmd_scan(cfg, args.days, args.no_llm, args.explain)
         if command == "doctor":
-            return cmd_doctor(cfg)
+            return cmd_doctor(cfg, local_only=args.local)
         if command == "send":
             return cmd_send(cfg, args.date, args.dry_run, args.test)
         if command == "telegram-chat":
             return cmd_telegram_chat(cfg)
-        return cmd_tui(cfg)
+        notes: list[tuple[str, str]] = []
+        updated = os.environ.pop(UPDATED_ENV, "")
+        if updated:  # this is the copy started right after an update
+            notes.append((f"Research Radar updated ({updated}).", "information"))
+        elif cfg.settings.get("auto_update", True):
+            code, notes = auto_update(argv)
+            if code is not None:
+                return code
+        return cmd_tui(cfg, notes)
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
