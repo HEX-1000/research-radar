@@ -31,7 +31,7 @@ Item type: {kind}
 This item was picked because it looks related to the reader interest. Reply with JSON in exactly this shape:
 {{"what": "<one sentence saying what this is>", "why": "<one sentence that names something specific from the source and says how it relates to the reader interest>", "verdict": "<one of: {verdicts}>"}}
 
-The reader interest describes what the reader cares about. It is not a description of the item. Never say the item does, supports or uses something unless the source text says so. If the link is thin, say so plainly in "why" and prefer watch or skip.
+The reader interest describes what the reader cares about. It is not a description of the item. Never say the item does, supports or uses something unless the source text says so. If the link is thin, say so plainly in "why" and prefer watch or skip. Write "why" to the reader directly, with "you" and "your". Never write "the reader" or "the reader interest" in a sentence. "why" is about the connection to the interest, not a summary of the results.
 
 Verdicts:
 {definitions}
