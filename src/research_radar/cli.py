@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import subprocess
 import sys
+import time
+import traceback
 from datetime import datetime, timedelta, timezone
 
 from . import __version__
@@ -13,6 +16,7 @@ from .config import Config, ConfigError, init_home, load_config, resolve_home
 from .deliver import DeliveryError, describe
 from .http import Http, SourceError
 from .llm import SUGGESTED_CHAT_MODEL, Ollama, OllamaError, ollama_advice
+from .schedule import DEFAULT_TIME, EXIT_SKIPPED
 
 # Set for the copy started right after an update, so it shows a notice and does not check again.
 UPDATED_ENV = "RADAR_UPDATED"
@@ -34,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_p.add_argument("--days", type=int, help="look back this many days instead of since the last scan")
     scan_p.add_argument("--no-llm", action="store_true", help="skip Ollama: keyword matching and plain descriptions")
     scan_p.add_argument("--explain", action="store_true", help="print the scores of the top 30 candidates")
+    scan_p.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="what the daily task runs: write to logs/scan.log and skip the scan when Ollama or the embedding model is not ready",
+    )
 
     send_p = sub.add_parser("send", help="send the digest by the channels enabled in interests.yaml")
     send_p.add_argument("--date", help="send a whole past day again (YYYY-MM-DD)")
@@ -41,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     send_p.add_argument("--test", action="store_true", help="send a short test message through each enabled channel")
 
     sub.add_parser("shortcut", help="put a Research Radar icon on the Windows desktop")
+    schedule_p = sub.add_parser("schedule", help="run a scan every day without opening the interface (Windows Task Scheduler)")
+    schedule_p.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
+    schedule_p.add_argument("--at", default=DEFAULT_TIME, metavar="HH:MM", help=f"time of day for 'on' (default {DEFAULT_TIME})")
     sub.add_parser("telegram-chat", help="find your Telegram chat id (write to your bot first)")
     doctor_p = sub.add_parser("doctor", help="check Ollama, every source and the delivery channels on this machine")
     doctor_p.add_argument("--local", action="store_true", help="check only Ollama and its models, nothing on the internet")
@@ -70,6 +82,8 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
     result = scan(cfg, days=days, use_llm=not no_llm, progress=lambda m: print(m, flush=True))
     print()
     print(f"{len(result.new_reports)} new items ({result.fetched} fetched). Note: {result.note_path}")
+    if result.backfilled:
+        print("Looked back for new or edited topics: " + ", ".join(result.backfilled))
     for skipped in result.skipped:
         print(f"skipped {skipped.source}: {skipped.reason}")
     for warning in result.warnings:
@@ -84,6 +98,91 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
         for entry in result.explain:
             mark = "yes" if entry.selected else "no"
             print(f"{entry.score:5.2f}  {entry.keyword_hits:4d}  {mark:>6}  {entry.topic.name} / {entry.item.title[:70]}")
+    return 0
+
+
+LOG_LIMIT = 200_000  # bytes; the log is moved aside once, so it never grows without bound
+OLLAMA_TRIES = 3
+OLLAMA_WAIT = 20.0  # seconds; a computer that just woke up may start Ollama a little after the task
+
+
+def _ollama_names(cfg: Config) -> list[str] | None:
+    """The models Ollama has, or None when it cannot be reached."""
+    s = cfg.settings
+    client = Ollama(s["ollama_url"], s["embed_model"], s["chat_model"], timeout=5.0)
+    try:
+        return client.models()
+    except OllamaError:
+        return None
+    finally:
+        client.close()
+
+
+def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, explain: bool, sleep=time.sleep) -> int:
+    """The scan the daily task runs. Everything it prints goes to <data home>/logs/scan.log,
+    because pythonw has no console. It does not scan when Ollama or the embedding model is
+    missing: a scan would only match by keywords, and the sources would count that day as read.
+    The next scan then collects the gap, up to max_catchup_days."""
+    from .schedule import log_path
+
+    log_file = log_path(resolve_home(home_arg))
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    if log_file.exists() and log_file.stat().st_size > LOG_LIMIT:
+        log_file.replace(log_file.with_suffix(".log.1"))
+    code = 1
+    with open(log_file, "a", encoding="utf-8") as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+        print(f"=== {datetime.now().astimezone():%Y-%m-%d %H:%M} ===", flush=True)
+        try:
+            cfg = _load(home_arg)
+            state, advice = "ok", []
+            if not no_llm:
+                for attempt in range(OLLAMA_TRIES):
+                    state, advice = ollama_advice(cfg.settings, _ollama_names(cfg), retry_hint="run the scan again")
+                    if state != "down" or attempt == OLLAMA_TRIES - 1:
+                        break
+                    sleep(OLLAMA_WAIT)
+            if state in ("down", "no-embed"):
+                for text, _ in advice:
+                    print(text)
+                print("No scan was run. The next scan collects what was missed.", flush=True)
+                code = EXIT_SKIPPED
+            else:
+                code = cmd_scan(cfg, days, no_llm, explain)
+        except ConfigError as exc:
+            print(f"error: {exc}")
+            code = 2
+        except Exception:
+            traceback.print_exc()
+            code = 1
+        print(f"exit code {code}", flush=True)
+    return code
+
+
+def cmd_schedule(home_arg: str | None, action: str, at: str) -> int:
+    from . import schedule as sched
+
+    home = resolve_home(home_arg)
+    try:
+        if action == "on":
+            if not (home / "interests.yaml").exists():
+                print(f"There is no interests.yaml in {home}. Run `radar init` first.", file=sys.stderr)
+                return 1
+            if sys.platform != "win32":
+                print("The Task Scheduler exists only on Windows. For cron, add this line with `crontab -e`:")
+                print(sched.cron_line(home, sched.parse_time(at)))
+                return 1
+            when = sched.create(home, at)
+            print(f"A scan will run every day at {when}, and as soon as possible after a missed start. No window opens.")
+            print(f"What it did is written to {sched.log_path(home)}. Check on it with `radar schedule status`.")
+            print("If you move this folder or rebuild .venv, run `radar schedule on` again.")
+        elif action == "off":
+            print("The daily scan was removed." if sched.remove() else "There was no daily scan to remove.")
+        else:
+            for line in sched.describe(sched.status(), sched.log_path(home)):
+                print(line)
+    except sched.ScheduleError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -254,11 +353,17 @@ def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
 
 
 def cmd_update() -> int:
-    from .update import check_and_update
+    from .update import check_and_update, source_root, whats_new
     from .update import describe as describe_update
 
     result = check_and_update()
     print(describe_update(result))
+    if result.status == "updated":
+        news = whats_new(source_root(), result.old, result.new)
+        if news:
+            print("What's new:")
+            for line in news:
+                print(f"  - {line}")
     return 0 if result.status in ("current", "updated", "offline") else 1
 
 
@@ -303,6 +408,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_shortcut(args.home)
         if command == "update":
             return cmd_update()
+        if command == "schedule":
+            return cmd_schedule(args.home, args.action, args.at)
+        if command == "scan" and args.scheduled:
+            return cmd_scheduled_scan(args.home, args.days, args.no_llm, args.explain)
         cfg = _load(args.home)
         if command == "scan":
             return cmd_scan(cfg, args.days, args.no_llm, args.explain)
@@ -313,9 +422,16 @@ def main(argv: list[str] | None = None) -> int:
         if command == "telegram-chat":
             return cmd_telegram_chat(cfg)
         notes: list[tuple[str, str]] = []
+        from .update import source_root, whats_new
+
         updated = os.environ.pop(UPDATED_ENV, "")
         if updated:  # this is the copy started right after an update
-            notes.append((f"Research Radar updated ({updated}).", "information"))
+            text = f"Research Radar updated ({updated})."
+            old, _, new = updated.partition(" to ")
+            news = whats_new(source_root(), old, new) if new else []
+            if news:
+                text += " What's new:\n" + "\n".join(f"- {line}" for line in news)
+            notes.append((text, "information"))
         elif cfg.settings.get("auto_update", True):
             code, notes = auto_update(argv)
             if code is not None:

@@ -65,6 +65,8 @@ Open Research Radar from the desktop icon, or run `radar`.
 
 The first thing to do is to describe your own interests. `radar init` copied an example `interests.yaml` with two topics, "Local-first AI tools" and "Geospatial machine learning". While those examples are unchanged, the interface says so, does not start a scan by itself, and `e` opens the file in an editor. Replace the topics with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. Save the file and press `s`: the interface reads the file again before every scan, so it can stay open while you edit. The file documents every setting.
 
+A topic you add or edit later does not start empty. The next scan looks back `first_run_days` for that topic alone, once, and says so ("Looked back for: ..."). Items you have already been shown are not shown again.
+
 The top bar has a dot next to "ollama". Green means a scan can use both models. Amber means a model is missing and red means Ollama is not reachable; a notice then says what to do. Without Ollama a scan still works, but it matches by keywords only, so the interface does not start one by itself in that case.
 
 ```
@@ -73,6 +75,7 @@ radar doctor    # checks Ollama and every source from your machine (--local: Oll
 radar           # opens the terminal interface
 radar shortcut  # Windows: puts an icon on the desktop (install.ps1 already did)
 radar update    # installs a newer version now, see Updates
+radar schedule on   # Windows: a daily scan without opening the app, see Scheduling
 ```
 
 To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
@@ -123,11 +126,22 @@ A scan sends only the items that are new. Each channel keeps its own record of w
 
 ## Scheduling (optional)
 
-The app has no timer and no background process. Because every scan starts from the last successful run of each source, nothing is lost if the computer was off for a few days: the next scan collects the whole gap, up to `max_catchup_days`.
+The app has no timer and no background process of its own. Because every scan starts from the last successful run of each source, nothing is lost if the computer was off for a few days: the next scan collects the whole gap, up to `max_catchup_days`.
 
-If you want scans without opening the interface, `radar scan` does the same work from the command line.
+On Windows, one command sets up a daily scan in the Task Scheduler:
 
-On Windows, create a Task Scheduler task that runs `radar scan`, and on the Settings tab enable "Run task as soon as possible after a scheduled start is missed". On Linux or macOS, a cron line such as `0 19 * * * radar scan` works. Useful flags: `--days N` to look back a fixed number of days, `--no-llm` to skip Ollama, `--explain` to print the scores of the top 30 candidates so you can tune `min_score`.
+```
+radar schedule on              # every day at 19:45
+radar schedule on --at 07:30   # another time
+radar schedule status          # next run, last run and how it ended
+radar schedule off
+```
+
+The task runs while you are logged on. It needs no password and no administrator rights, opens no window, and starts as soon as possible after a missed time (the computer was off or asleep) once there is a network connection. The scan sends your digest by email or Telegram if you turned those on. What it did is written to `logs/scan.log` in your data folder.
+
+If Ollama or the embedding model is not ready, the scheduled scan waits briefly for Ollama and then does not scan at all, instead of matching by keywords and counting the day as read. `radar schedule status` then says so, and the next scan collects what was missed. If you move the folder or rebuild `.venv`, run `radar schedule on` again.
+
+Without the Task Scheduler, `radar scan` does the same work from the command line. On Linux or macOS, `radar schedule on` prints a cron line to use, for example `45 19 * * * ... scan --scheduled`. Useful flags of `radar scan`: `--days N` to look back a fixed number of days, `--no-llm` to skip Ollama, `--explain` to print the scores of the top 30 candidates so you can tune `min_score`, and `--scheduled` (log to file, skip when Ollama is not ready) for schedulers.
 
 ## Sources and their limits
 
@@ -143,7 +157,7 @@ Each source is a small module in `src/research_radar/sources/`. A source takes t
 
 ## Updates
 
-When the terminal interface opens, it reads one small file from this repository on GitHub, `src/research_radar/__init__.py`, and compares the version in it with yours. If the version on GitHub is newer, it installs the new files and starts the new version. You see one line in the console and a notice in the app.
+When the terminal interface opens, it reads one small file from this repository on GitHub, `src/research_radar/__init__.py`, and compares the version in it with yours. If the version on GitHub is newer, it installs the new files and starts the new version. You see one line in the console and a notice in the app that lists what changed, taken from `CHANGELOG.md`.
 
 - A `git clone` of this repository is updated with `git pull --ff-only`, unless a tracked file has local edits. Then it skips the update and tells you. A clone of a fork is not updated.
 - A folder unpacked from the ZIP (what `install.ps1` sets up) is updated from the repository ZIP. Every Python file is checked for syntax errors before anything is written.
@@ -166,7 +180,7 @@ Updating means running code downloaded from this repository, so the repository o
 
 ## Status
 
-Version 0.2. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface, the first-run guidance, the update check and every source parser. The five sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. The Windows installer and the update check are new in 0.2. If a source, a channel, the installer or an update breaks, `radar doctor` or the console says why. Please open an issue with the output.
+Version 0.3. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface, the first-run guidance, the update check, the daily task and every source parser. The five sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. The Windows installer and the update check are new in 0.2, and the daily task is new in 0.3. If a source, a channel, the installer or an update breaks, `radar doctor` or the console says why. Please open an issue with the output.
 
 `min_score` depends on the embedding model. With `nomic-embed-text` the default of 0.55 is a starting point, and with `embeddinggemma` the best matches score lower (about 0.45 to 0.5), so 0.44 is a better start. Run `radar scan --days 3 --explain` to see the scores and set it for your own topics.
 
@@ -177,7 +191,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Tests run offline with fake sources and a fake Ollama.
+Tests run offline with fake sources and a fake Ollama. GitHub runs them on Windows and Linux for every push (`.github/workflows/tests.yml`). Because a new version number reaches every user who has automatic updates on, add an entry to `CHANGELOG.md` and raise `__version__` only for a commit that passes.
 
 ## License
 

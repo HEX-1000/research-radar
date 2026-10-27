@@ -4,6 +4,7 @@ interests.yaml
 notes/
 digests/
 state/
+logs/
 feedback*.json
 feedback*.md
 .env

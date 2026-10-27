@@ -428,10 +428,80 @@ def test_the_copy_started_after_an_update_says_so_and_does_not_check_again(tmp_p
     cli.main(["--home", str(tmp_path), "init"])
     opened = _tui_spy(monkeypatch)
     monkeypatch.setattr(cli, "auto_update", lambda argv: pytest.fail("must not check again"))
+    monkeypatch.setattr(up, "source_root", lambda *a: None)  # a pip install has no CHANGELOG.md
     monkeypatch.setenv(cli.UPDATED_ENV, "0.2.0 to 0.3.0")
     assert cli.main(["--home", str(tmp_path)]) == 0
     assert opened == [[("Research Radar updated (0.2.0 to 0.3.0).", "information")]]
     assert cli.UPDATED_ENV not in os.environ  # not passed on to anything started later
+
+
+CHANGELOG_TEXT = """# Changelog
+
+## 0.3.0
+- Third thing.
+- Fourth thing.
+
+## 0.2.0
+- Second thing.
+
+## 0.1.0
+- First thing.
+"""
+
+
+def test_changes_between_two_versions():
+    assert up.changes_between(CHANGELOG_TEXT, "0.2.0", "0.3.0") == ["Third thing.", "Fourth thing."]
+    assert up.changes_between(CHANGELOG_TEXT, "0.1.0", "0.3.0") == [
+        "0.3.0: Third thing.", "0.3.0: Fourth thing.", "0.2.0: Second thing.",
+    ]
+    assert up.changes_between(CHANGELOG_TEXT, "0.3.0", "0.3.0") == []  # nothing newer than where you are
+    assert up.changes_between(CHANGELOG_TEXT, "0.1.0", "0.2.0") == ["Second thing."]  # not past the new version
+
+
+def test_a_long_changelog_is_cut_with_a_pointer_to_the_file():
+    text = "## 0.9.0\n" + "".join(f"- line {n}\n" for n in range(8))
+    lines = up.changes_between(text, "0.8.0", "0.9.0", limit=3)
+    assert lines == ["line 0", "line 1", "line 2", "and 5 more in CHANGELOG.md"]
+
+
+def test_whats_new_never_fails(tmp_path):
+    assert up.whats_new(None, "0.1.0", "0.2.0") == []
+    assert up.whats_new(tmp_path, "0.1.0", "0.2.0") == []  # no CHANGELOG.md there
+    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_TEXT, encoding="utf-8")
+    assert up.whats_new(tmp_path, "0.2.0", "0.3.0") == ["Third thing.", "Fourth thing."]
+
+
+def test_the_notice_after_an_update_lists_what_changed(tmp_path, monkeypatch):
+    cli.main(["--home", str(tmp_path / "home"), "init"])
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "CHANGELOG.md").write_text(CHANGELOG_TEXT, encoding="utf-8")
+    opened = _tui_spy(monkeypatch)
+    monkeypatch.setattr(up, "source_root", lambda *a: root)
+    monkeypatch.setenv(cli.UPDATED_ENV, "0.2.0 to 0.3.0")
+    cli.main(["--home", str(tmp_path / "home")])
+    text, severity = opened[0][0]
+    assert text == "Research Radar updated (0.2.0 to 0.3.0). What's new:\n- Third thing.\n- Fourth thing."
+    assert severity == "information"
+
+
+def test_radar_update_prints_what_changed(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "CHANGELOG.md").write_text(CHANGELOG_TEXT, encoding="utf-8")
+    monkeypatch.setattr(up, "source_root", lambda *a: root)
+    monkeypatch.setattr(up, "check_and_update", lambda: up.UpdateResult("updated", "0.2.0", "0.3.0", "git pull"))
+    assert cli.main(["update"]) == 0
+    out = capsys.readouterr().out
+    assert "What's new:" in out and "  - Third thing." in out
+
+
+def test_the_real_changelog_covers_the_current_version():
+    from research_radar import __version__
+
+    text = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert up.changes_between(text, "0.0.1", __version__, limit=100), "add an entry for this version to CHANGELOG.md"
+    assert f"## {__version__}" in text
 
 
 def test_auto_update_false_skips_the_check(tmp_path, monkeypatch):

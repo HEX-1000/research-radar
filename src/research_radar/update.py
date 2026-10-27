@@ -58,7 +58,7 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 # Never written, wherever they appear in a path.
 PROTECTED_PARTS = {".git", ".venv", "venv", "__pycache__", BACKUP_DIR, ".pytest_cache", "build", "dist"}
 # Personal data that can sit at the top of the folder when someone keeps the data home in the clone.
-PERSONAL_TOP = {"interests.yaml", "notes", "digests", "state", ".env"}
+PERSONAL_TOP = {"interests.yaml", "notes", "digests", "state", "logs", ".env"}
 PERSONAL_TOP_PATTERNS = ("feedback*", ".env.*", "*.local.yaml")
 REQUIRED_FILES = ("pyproject.toml", VERSION_PATH, "src/research_radar/cli.py")
 
@@ -437,6 +437,40 @@ def check_and_update(
     except Exception as exc:  # an update problem must never stop the app from starting
         return UpdateResult("failed", old, remote, f"{type(exc).__name__}: {exc}")
     return result
+
+
+CHANGELOG = "CHANGELOG.md"
+SECTION_RE = re.compile(r"^##\s+v?(\d+(?:\.\d+){0,3})\s*$")
+
+
+def changes_between(text: str, old: str, new: str, limit: int = 5) -> list[str]:
+    """The entries of CHANGELOG.md for versions after old, up to and including new.
+
+    One version gives its lines as they are. Several give each line a "version: " prefix.
+    More than limit lines are cut, with a pointer to the file."""
+    sections: list[tuple[str, list[str]]] = []
+    for line in text.splitlines():
+        heading = SECTION_RE.match(line.strip())
+        if heading:
+            sections.append((heading.group(1), []))
+        elif sections and line.lstrip().startswith("- "):
+            sections[-1][1].append(line.lstrip()[2:].strip())
+    wanted = [(v, items) for v, items in sections if is_newer(v, old) and not is_newer(v, new)]
+    several = len(wanted) > 1
+    lines = [f"{v}: {item}" if several else item for v, items in wanted for item in items]
+    if len(lines) > limit:
+        lines = lines[:limit] + [f"and {len(lines) - limit} more in {CHANGELOG}"]
+    return lines
+
+
+def whats_new(root: Path | None, old: str, new: str) -> list[str]:
+    """What changed between two versions, from CHANGELOG.md in the source folder. Never raises."""
+    if root is None:
+        return []
+    try:
+        return changes_between((root / CHANGELOG).read_text(encoding="utf-8"), old, new)
+    except (OSError, ValueError):
+        return []
 
 
 def describe(result: UpdateResult) -> str:
