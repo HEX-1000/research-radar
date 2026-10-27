@@ -79,6 +79,7 @@ def test_a_powershell_failure_is_reported(tmp_path, monkeypatch):
         shortcut.create_shortcut(tmp_path, is_windows=True)
 
 
-def test_the_command_needs_no_interests_file_and_explains_itself_off_windows(tmp_path, capsys):
+def test_the_command_needs_no_interests_file_and_explains_itself_off_windows(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(shortcut.sys, "platform", "linux")  # on a Windows runner it would really create one
     assert cli.main(["--home", str(tmp_path / "nothing-here"), "shortcut"]) == 1
     assert "only supported on Windows" in capsys.readouterr().err

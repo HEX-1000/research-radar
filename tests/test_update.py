@@ -276,7 +276,8 @@ def test_dependencies_with_and_without_tomllib():
 
 def test_origin_must_be_the_official_repository_exactly():
     for url in ("https://github.com/HEX-1000/research-radar", "https://github.com/hex-1000/research-radar.git",
-                "git@github.com:HEX-1000/research-radar.git", "/tmp/x/HEX-1000/research-radar.git/"):
+                "git@github.com:HEX-1000/research-radar.git", "/tmp/x/HEX-1000/research-radar.git/",
+                "C:\\Users\\me\\HEX-1000\\research-radar.git"):
         assert up.origin_is(url, "HEX-1000/research-radar"), url
     for url in ("https://github.com/HEX-1000/research-radar-dev", "https://github.com/someone/research-radar",
                 "https://github.com/xHEX-1000/research-radar"):

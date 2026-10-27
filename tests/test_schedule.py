@@ -42,7 +42,7 @@ def test_bad_times_are_refused_with_an_example(text):
 # the task -----------------------------------------------------------------------
 
 def test_create_passes_every_value_through_the_environment(tmp_path):
-    home = tmp_path / 'my "data" folder'
+    home = tmp_path / "my data folder"
     run = Recorder("ok")
     assert schedule.create(home, "6:30", runner=run, is_windows=True) == "06:30"
     script, env = run.calls[0]
@@ -50,9 +50,14 @@ def test_create_passes_every_value_through_the_environment(tmp_path):
     assert env["RR_TASK"] == schedule.TASK_NAME
     assert env["RR_WORKDIR"] == str(home)
     assert '--home "' in env["RR_ARGS"] and env["RR_ARGS"].endswith("scan --scheduled")
-    assert '"data"' not in env["RR_ARGS"]  # a quote in a path cannot end the quoted argument early
+    assert f'--home "{home}"' in env["RR_ARGS"]
     assert "StartWhenAvailable" in script and "-RunOnlyIfNetworkAvailable" in script
     assert str(home) not in script  # nothing from the user is pasted into the script text
+
+
+def test_a_quote_in_a_path_cannot_end_the_quoted_argument_early():
+    args = schedule.task_arguments(Path('C:/my "data" folder'))
+    assert args.count('"') == 2 and 'my data folder' in args
 
 
 def test_create_fails_with_the_scheduler_message(tmp_path):
