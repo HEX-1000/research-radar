@@ -11,7 +11,7 @@
 
 settings:
   ollama_url: http://localhost:11434
-  embed_model: nomic-embed-text
+  embed_model: nomic-embed-text   # embeddinggemma also works; if you change it, re-tune min_score
   chat_model: ""            # empty = use the first installed non-embedding model
   summary_language: English
   min_score: 0.55           # lower it to see more, raise it to see less (try: radar scan --explain)
@@ -22,6 +22,26 @@ settings:
   auto_scan_on_launch: true # the TUI catches up when you open it
   github_token_env: GITHUB_TOKEN   # name of the environment variable, optional
   # notes_dir: ~/research-radar-notes   # default: <data home>/notes
+
+# Where the daily digest goes. Every scan writes an HTML page to <data home>/digests.
+# Email and Telegram are optional. Passwords and tokens are never written here:
+# put them in the environment variables named below.
+delivery:
+  html_file: true
+  send_when_empty: false     # true = also send "nothing new today"
+  retry_days: 3              # a message that failed to send is retried for this many days
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    security: starttls       # starttls, ssl or none
+    username: you@example.com
+    password_env: RADAR_SMTP_PASSWORD   # Gmail needs an app password
+    to: you@example.com
+  telegram:
+    enabled: false
+    token_env: RADAR_TELEGRAM_TOKEN
+    chat_id: ""              # `radar telegram-chat` shows it
 
 # Phrases that drop an item from every topic.
 exclude:

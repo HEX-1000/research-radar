@@ -28,9 +28,19 @@ Item type: {kind}
 {text}
 </source>
 
-Reply with JSON in exactly this shape:
-{{"what": "<one sentence saying what this is>", "why": "<one sentence saying why it fits the reader interest, or an empty string if it does not clearly fit>", "verdict": "<one of: {verdicts}>"}}
+This item was picked because it looks related to the reader interest. Reply with JSON in exactly this shape:
+{{"what": "<one sentence saying what this is>", "why": "<one sentence saying how it connects to the reader interest>", "verdict": "<one of: {verdicts}>"}}
+
+Verdicts:
+{definitions}
 Write the sentences in {language}."""
+
+VERDICT_HELP = {
+    "install": "install = a tool the reader could try today",
+    "read": "read = worth reading in full",
+    "watch": "watch = interesting, worth checking again later",
+    "skip": "skip = shares words with the interest but is of no use to the reader; choose it only when the source is clearly unrelated",
+}
 
 
 def allowed_verdicts(kind: str) -> tuple[str, ...]:
@@ -84,6 +94,7 @@ def summarize(ollama: Ollama, item: Item, topic: Topic, source_text: str, langua
         title=item.title,
         text=body,
         verdicts=", ".join(allowed_verdicts(item.kind)),
+        definitions="\n".join(VERDICT_HELP[v] for v in allowed_verdicts(item.kind)),
         language=language,
     )
     try:

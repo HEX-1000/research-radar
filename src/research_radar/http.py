@@ -82,7 +82,7 @@ class Http:
                 continue
             if response.status_code == 403 and host == "api.github.com":
                 if response.headers.get("x-ratelimit-remaining") == "0":
-                    raise SourceError("github: rate limit used up, try again later or set a token")
+                    raise SourceError("the search rate limit is used up, try again later or set GITHUB_TOKEN")
             if response.status_code >= 400:
                 raise SourceError(f"{host}: HTTP {response.status_code}")
             return response

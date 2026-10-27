@@ -86,6 +86,17 @@ class Store:
         self.save_day(date, day["reports"], day["skipped"], day["warnings"], day["ranking"])
         return vote
 
+    # what each delivery channel has already been sent ------------------------------
+
+    def delivered(self) -> dict[str, list[str]]:
+        return self._read(self.dir / "delivered.json", {})
+
+    def mark_delivered(self, channel: str, keys: list[str]) -> None:
+        data = self.delivered()
+        merged = sorted(set(data.get(channel, [])) | set(keys))
+        data[channel] = merged[-1000:]  # keys start with the date, so the oldest go first
+        self._write(self.dir / "delivered.json", data)
+
     # daily reports -------------------------------------------------------------
 
     def _day_path(self, date: str) -> Path:
