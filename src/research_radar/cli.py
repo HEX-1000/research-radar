@@ -12,7 +12,7 @@ from . import __version__
 from .config import Config, ConfigError, init_home, load_config, resolve_home
 from .deliver import DeliveryError, describe
 from .http import Http, SourceError
-from .llm import Ollama, OllamaError, ollama_advice
+from .llm import SUGGESTED_CHAT_MODEL, Ollama, OllamaError, ollama_advice
 
 # Set for the copy started right after an update, so it shows a notice and does not check again.
 UPDATED_ENV = "RADAR_UPDATED"
@@ -59,7 +59,7 @@ def cmd_init(home_arg: str | None) -> int:
     print(f"Edit your interests here: {target}")
     print("Then install the local models (once):")
     print("  ollama pull nomic-embed-text")
-    print("  ollama pull <a chat model you like>")
+    print(f"  ollama pull {SUGGESTED_CHAT_MODEL}   (or any chat model you like)")
     print("Check everything with `radar doctor`, then run `radar`.")
     return 0
 
