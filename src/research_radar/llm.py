@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -75,9 +76,12 @@ class Ollama:
         raise OllamaError("no chat model installed. Run `ollama pull` for one, or set settings.chat_model")
 
     def _prefix(self, kind: str) -> str:
-        # nomic-embed-text was trained with task prefixes and scores better with them.
-        if "nomic" in self.embed_model.lower():
+        # These embedding models were trained with task prefixes and score better with them.
+        name = self.embed_model.lower()
+        if "nomic" in name:
             return "search_query: " if kind == "query" else "search_document: "
+        if "embeddinggemma" in name:
+            return "task: search result | query: " if kind == "query" else "title: none | text: "
         return ""
 
     def embed(self, texts: list[str], kind: str = "document") -> list[list[float]]:
@@ -107,21 +111,27 @@ class Ollama:
     def chat_json(self, system: str, user: str) -> dict[str, Any] | None:
         """One JSON answer from the chat model, or None when the reply is not usable."""
         model = self.resolve_chat_model()
-        data = self._request(
-            "POST",
-            "/api/chat",
-            json={
-                "model": model,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.2, "num_ctx": 4096},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            },
-        )
+        payload: dict[str, Any] = {
+            "model": model,
+            "stream": False,
+            "format": "json",
+            # Models that think before answering would spend minutes on a one-line note.
+            "think": False,
+            "options": {"temperature": 0.2, "num_ctx": 4096},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        try:
+            data = self._request("POST", "/api/chat", json=payload)
+        except OllamaError as exc:
+            if "think" not in str(exc).lower():
+                raise
+            payload.pop("think")  # an Ollama version or model that does not know the option
+            data = self._request("POST", "/api/chat", json=payload)
         content = (data.get("message") or {}).get("content", "")
+        content = re.sub(r"<think>.*?</think>", "", content or "", flags=re.DOTALL).strip()
         try:
             parsed = json.loads(content)
         except (TypeError, ValueError):
