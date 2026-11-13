@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from research_radar import pipeline, ranker
+from research_radar.candidates import CandidateStore
 from research_radar.config import Topic
 from research_radar.digest import MONTHS, Digest, render_text
 from research_radar.models import Item, Report
@@ -13,7 +14,7 @@ from research_radar.pipeline import scan, window_start
 from research_radar.sources.github import RepoCheck
 from research_radar.store import Store
 
-from conftest import FakeOllama
+from conftest import FakeOllama, stored_item, write_state
 
 NOW = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
 
@@ -106,7 +107,8 @@ def test_rising_repository_is_reported_once(make_cfg, http_factory):
     store = Store(cfg.state_dir)
     url = "https://github.com/old/project"
     earlier = (NOW - timedelta(days=3)).astimezone().date().isoformat()
-    store.save_seen({url: {"date": earlier, "title": "old/project", "source": "github", "full_name": "old/project", "stars": 40}})
+    # Reported by an older version: the first scan moves it into the store, with its topic.
+    write_state(cfg, "seen.json", {url: {"date": earlier, "title": "old/project", "source": "github", "full_name": "old/project", "stars": 40}})
     store.save_day(
         earlier,
         [Report(date=earlier, topic="Local-first AI tools", score=0.5, source="github", kind="repo", title="old/project", url=url)],
@@ -128,10 +130,9 @@ def _seen_repo(name: str, date: str) -> dict:
 
 def test_rising_check_goes_on_past_a_deleted_repository(make_cfg, http_factory, monkeypatch):
     cfg = make_cfg()
-    store = Store(cfg.state_dir)
     earlier = (NOW - timedelta(days=3)).astimezone().date().isoformat()
     names = ["a/first", "gone/lure", "b/second"]
-    store.save_seen({f"https://github.com/{n}": _seen_repo(n, earlier) for n in names})
+    write_state(cfg, "seen.json", {f"https://github.com/{n}": _seen_repo(n, earlier) for n in names})
     asked: list[str] = []
 
     def check(http, full_names):
@@ -148,7 +149,8 @@ def test_rising_check_goes_on_past_a_deleted_repository(make_cfg, http_factory, 
     day = date.fromisoformat(earlier)
     assert removed == [f"gone/lure, shown on {day.day} {MONTHS[day.month - 1]}, has been removed from GitHub since."]
     assert removed[0] in first.note_path.read_text(encoding="utf-8")
-    assert Store(cfg.state_dir).seen()["https://github.com/gone/lure"]["gone"] == first.date
+    gone = stored_item(cfg, "github:gone/lure")
+    assert gone["state"] == "gone" and gone["state_on"] == first.date
 
     asked.clear()
     second = run(cfg, http_factory(), now=NOW + timedelta(hours=1))
@@ -206,7 +208,9 @@ def test_votes_flip_and_feed_back_into_ranking(make_cfg, http_factory):
     assert store.set_vote(result.date, url, 1) == 1
     assert store.set_vote(result.date, url, 1) == 0  # the same key twice clears it
     assert store.set_vote(result.date, url, -1) == -1
-    likes, dislikes = store.vote_vectors()
+    model = cfg.settings["embed_model"]
+    with CandidateStore.open(cfg.state_dir, embed_model=model, now=NOW, write=False) as candidates:
+        likes, dislikes = candidates.vote_vectors(store.votes(), model)  # found through the link table
     assert likes == [] and len(dislikes) == 1
     assert store.load_day(result.date)["reports"][0].vote in (-1, 0)
 
@@ -225,9 +229,10 @@ def test_global_and_topic_excludes():
         Item("github", "repo", "a/llm-tool", "https://x/2", "local llm helper"),
         Item("github", "repo", "a/llm-cracked", "https://x/3", "cracked local llm"),
     ]
-    scored, mode = ranker.rank(items, [topic], embed=None, global_exclude=["cracked"])
-    assert mode == "keywords"
-    assert [s.item.title for s in scored] == ["a/llm-tool"]
+    ranking = ranker.rank(items, [topic], embed=None, global_exclude=["cracked"])
+    assert ranking.mode == "keywords"
+    assert [s.item.title for s in ranking.scored] == ["a/llm-tool"]
+    assert ranking.left_out == {"url:https://x/1": "excluded", "url:https://x/3": "lure"}  # "cracked" is lure wording
 
 
 @pytest.mark.parametrize(
@@ -265,8 +270,9 @@ def test_repositories_that_offer_cracked_software_are_dropped():
     ]
     assert ranker.is_lure(lure) and ranker.is_lure(keygen)
     assert not any(ranker.is_lure(i) for i in honest)
-    scored, _ = ranker.rank([lure, keygen, *honest], [topic], embed=None)
-    assert {s.item.url for s in scored} == {"https://x/3", "https://x/4", "https://x/5", "https://x/6"}
+    ranking = ranker.rank([lure, keygen, *honest], [topic], embed=None)
+    assert {s.item.url for s in ranking.scored} == {"https://x/3", "https://x/4", "https://x/5", "https://x/6"}
+    assert set(ranking.left_out.values()) == {"lure"}
 
 
 def test_note_for_an_empty_topic_and_skipped_source():

@@ -18,6 +18,9 @@ what makes an update reach everyone.
 
 - Small GitHub repositories with at least 10 stars from accounts with 2 followers or fewer are held back for a week and checked again; `trust_check: false` turns this off.
 - The note a model writes for a repository now starts from its description and topics, then the README, and the model is told to ignore instructions inside the source text.
+- Every item a scan receives is kept in `state/radar.db`, which replaces `seen.json` and `vectors.json`. The first scan moves them over and renames them to `*.migrated`. A version older than this one finds no `seen.json` and would report old items again.
+- An item fetched again is not scored or shown again. An edited topic, or a new embedding model, gets one fresh look at the items in the window.
+- The same paper from arXiv and from Hugging Face papers is one item.
 
 ## 0.3.1
 

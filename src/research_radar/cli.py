@@ -82,6 +82,7 @@ PREVIEW_END = (
 
 
 def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool, scheduled: bool = False) -> int:
+    from .candidates import StoreError
     from .lock import ScanLocked
     from .pipeline import scan
 
@@ -94,6 +95,9 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool, schedul
     except ScanLocked as exc:
         print(str(exc), flush=True)
         return EXIT_SKIPPED
+    except StoreError as exc:
+        print(f"error: {exc}", flush=True)
+        return 1
     print()
     if result.preview:
         print(f"{len(result.new_reports)} items in a keyword preview ({result.fetched} fetched).")

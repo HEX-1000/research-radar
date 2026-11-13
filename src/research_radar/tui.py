@@ -23,6 +23,7 @@ from . import __version__
 from .config import Config, ConfigError, load_config, uses_example_topics
 from .deliver import describe, write_digest_file
 from .llm import Ollama, ollama_advice
+from .candidates import StoreError
 from .lock import ScanLocked
 from .models import Report, plain_title
 from .notes import meta_line
@@ -512,6 +513,8 @@ class RadarApp(App):
             result = self.scan_fn(self.cfg, progress=lambda m: self.call_from_thread(self.set_status, m))
         except ScanLocked as exc:
             self.call_from_thread(self._scan_failed, str(exc), False)
+        except StoreError as exc:
+            self.call_from_thread(self._scan_failed, str(exc))
         except Exception as exc:  # the UI must survive any failure in a scan
             self.call_from_thread(self._scan_failed, f"{type(exc).__name__}: {exc}")
         else:

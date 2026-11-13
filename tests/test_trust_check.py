@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
 from research_radar.http import Http
 from research_radar.pipeline import scan
-from research_radar.store import Store
 
-from conftest import GITHUB_SEARCH, FakeOllama, make_handler
+from conftest import GITHUB_SEARCH, FakeOllama, db_rows, make_handler, stored_item, write_state
 
 NOW = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
 LURE_URL = "https://github.com/lure/local-llm-kit"
+LURE_KEY = "github:lure/local-llm-kit"
 LURE_TEXT = GITHUB_SEARCH["items"][0]["description"]
 
 
@@ -98,8 +98,14 @@ def test_a_thin_repository_is_held_and_the_next_candidate_takes_its_place(make_c
     assert "Held back for a week: lure/local-llm-kit (50 KB, 50 stars, owner with 0 followers)." in result.warnings
     note = result.note_path.read_text(encoding="utf-8")
     assert "lure/local-llm-kit" in note and LURE_URL not in note  # named, never linked
-    entry = Store(cfg.state_dir).seen()[LURE_URL]
-    assert entry["held"] == local_day(NOW) and "owner with 0 followers" in entry["held_reason"]
+    entry = stored_item(cfg, LURE_KEY)
+    week_later = (date.fromisoformat(local_day(NOW)) + timedelta(days=7)).isoformat()
+    assert (entry["state"], entry["state_on"], entry["held_until"]) == ("held", local_day(NOW), week_later)
+    assert entry["topic"] == held.topic.name
+    numbers = db_rows(cfg, "SELECT size_kb, stars, forks, followers FROM observation WHERE key = ?", (LURE_KEY,))
+    assert numbers == [{"size_kb": 50, "stars": 50, "forks": 0, "followers": 0}]
+    decision = db_rows(cfg, "SELECT outcome FROM decision WHERE key = ?", (LURE_KEY,))
+    assert decision == [{"outcome": "held"}]
 
 
 def test_a_held_repository_is_not_a_candidate_again_before_the_week_is_over(make_cfg):
@@ -145,7 +151,10 @@ def test_the_trust_check_can_be_turned_off(make_cfg):
 
 
 def _held(cfg, held_on: datetime):
-    Store(cfg.state_dir).save_seen(
+    """A repository an older version held back; the first scan moves it into the store."""
+    write_state(
+        cfg,
+        "seen.json",
         {
             LURE_URL: {
                 "date": local_day(held_on),
@@ -168,8 +177,8 @@ def test_recheck_after_a_week_when_the_repository_is_gone(make_cfg):
     result = run(cfg, World([GOOD], repo=None))
     line = f"lure/local-llm-kit, held back on {day.day} {day.strftime('%B')}, has been removed from GitHub since."
     assert line in result.warnings
-    entry = Store(cfg.state_dir).seen()[LURE_URL]
-    assert entry["gone"] == local_day(NOW) and "held" not in entry
+    entry = stored_item(cfg, LURE_KEY)
+    assert (entry["state"], entry["state_on"], entry["held_until"]) == ("gone", local_day(NOW), None)
 
 
 def test_recheck_when_it_is_still_thin_drops_it_without_a_line(make_cfg):
@@ -179,8 +188,10 @@ def test_recheck_when_it_is_still_thin_drops_it_without_a_line(make_cfg):
     result = run(cfg, World([GOOD], repo=still))
     assert "lure/local-llm-kit" not in {r.title for r in result.new_reports}
     assert not [w for w in result.warnings if "lure/local-llm-kit" in w]
-    entry = Store(cfg.state_dir).seen()[LURE_URL]
-    assert entry["dropped"] == local_day(NOW) and "held" not in entry
+    entry = stored_item(cfg, LURE_KEY)
+    assert (entry["state"], entry["state_on"], entry["held_until"]) == ("dropped", local_day(NOW), None)
+    numbers = db_rows(cfg, "SELECT size_kb, stars, followers FROM observation WHERE key = ?", (LURE_KEY,))
+    assert numbers == [{"size_kb": 60, "stars": 80, "followers": 0}]  # the recheck's answer is kept
     again = run(cfg, World([GOOD], repo=still), now=NOW + timedelta(days=1))
     assert "lure/local-llm-kit" not in {r.title for r in again.new_reports}
 
@@ -191,15 +202,16 @@ def test_recheck_when_it_has_grown_makes_it_a_candidate(make_cfg):
     grown = _raw("lure/local-llm-kit", 4000, 300, "lure", LURE_TEXT)
     result = run(cfg, World([GOOD], repo=grown))
     assert "lure/local-llm-kit" in {r.title for r in result.new_reports}
-    entry = Store(cfg.state_dir).seen()[LURE_URL]
-    assert "held" not in entry and entry["stars"] == 300
+    entry = stored_item(cfg, LURE_KEY)
+    assert (entry["state"], entry["held_until"], entry["shown_stars"]) == ("shown", None, 300)
 
 
 def test_recheck_when_the_request_fails_asks_again_at_the_next_scan(make_cfg):
     cfg = make_cfg()
     _held(cfg, NOW - timedelta(days=7))
     run(cfg, World([GOOD], repo=503))
-    assert Store(cfg.state_dir).seen()[LURE_URL]["held"] == local_day(NOW - timedelta(days=7))
+    entry = stored_item(cfg, LURE_KEY)
+    assert (entry["state"], entry["state_on"]) == ("held", local_day(NOW - timedelta(days=7)))
 
 
 def test_a_held_repository_is_not_reported_as_rising(make_cfg):

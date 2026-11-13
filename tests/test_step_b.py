@@ -58,7 +58,9 @@ def no_sending(monkeypatch):
 def test_a_keyword_scan_changes_no_file_and_sends_nothing(make_cfg, http_factory, no_sending, how):
     cfg = make_cfg()
     cfg.delivery["telegram"]["enabled"] = True
-    earlier = run(cfg, http_factory(), now=NOW - timedelta(days=2))  # state, a note and a digest to protect
+    # State, a note and a digest to protect. arXiv fails here, so its paper is still new later and
+    # the later scan has something to embed: items scored before never reach the embedder again.
+    earlier = run(cfg, http_factory(fail={"export.arxiv.org"}), now=NOW - timedelta(days=2))
     assert earlier.new_reports and not earlier.preview
     no_sending.clear()
     before = snapshot(cfg.home)

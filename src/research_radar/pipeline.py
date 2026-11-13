@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
+from .candidates import CandidateStore, ScanRecord, StoredItem
 from .config import Config, Topic
 from .deliver import DeliveryResult, deliver_pending, write_digest_file
 from .digest import MONTHS
@@ -18,7 +19,7 @@ from .llm import Ollama, OllamaError
 from .lock import scan_lock
 from .models import Item, Report, SkippedSource
 from .notes import write_note
-from .ranker import Scored, rank, select
+from .ranker import Ranking, Scored, rank, select
 from .sources import SOURCES, FetchContext
 from .sources.github import HOLD_DAYS, check_repos, fetch_readme, fetch_repo, parse_repo, thin_reason
 from .sources.github import GONE as GITHUB_GONE
@@ -98,12 +99,17 @@ def scan(
     ollama = ollama or Ollama(
         cfg.settings["ollama_url"], cfg.settings["embed_model"], cfg.settings["chat_model"]
     )
+    model = str(cfg.settings["embed_model"])
     try:
         llm_ready = use_llm and ollama.ping()
+        args = (cfg, store, http, ollama, now, local_date, progress, days, use_llm, llm_ready, result)
         if not llm_ready:  # a keyword ranking is a preview: it writes nothing, so it needs no lock
-            return _scan(cfg, store, http, ollama, now, local_date, progress, days, use_llm, llm_ready, result)
+            with CandidateStore.open(cfg.state_dir, embed_model=model, now=now, write=False) as candidates:
+                return _scan(candidates, *args)
         with scan_lock(cfg.state_dir):
-            return _scan(cfg, store, http, ollama, now, local_date, progress, days, use_llm, llm_ready, result)
+            # The first scan of this version builds the store from seen.json and vectors.json.
+            with CandidateStore.open(cfg.state_dir, embed_model=model, now=now) as candidates:
+                return _scan(candidates, *args)
     finally:
         if own_http:
             http.close()
@@ -112,6 +118,7 @@ def scan(
 
 
 def _scan(
+    candidates: CandidateStore,
     cfg: Config,
     store: Store,
     http: Http,
@@ -125,7 +132,8 @@ def _scan(
     result: RunResult,
 ) -> RunResult:
     last_runs = store.last_runs()
-    seen = store.seen()
+    model = str(cfg.settings["embed_model"])
+    record = ScanRecord(now=now, day=local_date, embed_model=model)
 
     # Topics that are new or were edited since the last scan get a one time look back, because
     # the window of a source only reaches back to the last scan. The first scan after the
@@ -137,7 +145,7 @@ def _scan(
     pending = [] if marks is None else [t for t in cfg.topics if marks.get(t.name) != current[t.name]]
 
     # 1. Fetch -------------------------------------------------------------------
-    fetched: dict[str, Item] = {}
+    # One item per key: the same paper from arXiv and from Hugging Face is one item.
     advanced: dict[str, str] = {}
     windows: dict[str, datetime] = {}
     for name, fetch in SOURCES.items():
@@ -148,7 +156,7 @@ def _scan(
         ctx = FetchContext(config=cfg, http=http, since=windows[name], until=now)
         try:
             for item in fetch(ctx):
-                fetched.setdefault(item.url, item)
+                record.add(item)
         except SourceError as exc:
             result.skipped.append(SkippedSource(name, str(exc)))
             continue
@@ -171,9 +179,8 @@ def _scan(
             ctx = FetchContext(config=back_cfg, http=http, since=back_start, until=windows[name])
             try:
                 for item in fetch(ctx):
-                    if item.url not in fetched:
-                        fetched[item.url] = item
-                        only_for_new.add(item.url)
+                    if record.add(item):
+                        only_for_new.add(item.key)
             except SourceError:
                 failed = True
                 continue
@@ -184,52 +191,71 @@ def _scan(
             result.warnings.append("Could not look back for new topics on every source; trying again at the next scan.")
         elif reached:
             result.backfilled = [t.name for t in pending]
-    result.fetched = len(fetched)
+    result.fetched = record.fetched = len(record.items)
+    record.windows = {name: [start.isoformat(), now.isoformat()] for name, start in windows.items()}
 
-    fresh = [item for url, item in fetched.items() if url not in seen]
+    # Items shown, dropped or gone never compete again; held ones only at their recheck.
+    known = candidates.known(record.items)
+    fresh: dict[str, Item] = {}
+    for key, item in list(record.items.items()):
+        row = known.get(key)
+        if row is not None and row.url != item.url:
+            item = record.items[key] = replace(item, url=row.url)  # the link shown is the first one stored
+        if row is None or row.state == "seen":
+            fresh[key] = item
 
     # Repositories held back a week ago are asked about again; one that is not thin joins the
-    # candidates of this scan.
+    # candidates of this scan and competes for every topic.
     trust_on = bool(cfg.settings.get("trust_check", True))
-    followers: dict[str, int | None] = {}
-    cleared: dict[str, str] = {}  # url of a rechecked repository: the held date it had
+    cleared: set[str] = set()
     if cfg.source_enabled("github") and llm_ready:  # a preview skips the held repositories
-        for item, held_on in _recheck_held(cfg, http, seen, local_date, trust_on, followers, result, progress):
-            fresh.append(item)
-            cleared[item.url] = held_on
+        for item in _recheck_held(http, candidates, record, local_date, trust_on, result, progress):
+            record.add(item)
+            fresh[item.key] = record.items[item.key]
+            cleared.add(item.key)
 
     # 2. Rank --------------------------------------------------------------------
-    likes, dislikes = store.vote_vectors()
-    scored: list[Scored] = []
+    # An item competes for a topic once per version of the topic's text and of the embedding
+    # model, so an item fetched again is not scored again and an edited topic gets one look.
+    likes, dislikes = candidates.vote_vectors(store.votes(), model)
+    done = candidates.scored(fresh, model)
+    pending_names = {t.name for t in pending}
 
-    def rank_all(embed) -> tuple[list[Scored], str]:
-        # Items found only by the look back are compared with the new topics alone, so the
-        # look back cannot bring up older leftovers for topics that have not changed.
-        kept = [i for i in fresh if i.url not in only_for_new]
-        extra = [i for i in fresh if i.url in only_for_new]
-        options = dict(
+    def competes(item: Item, topic: Topic) -> bool:
+        key = item.key
+        if key in cleared:
+            return True
+        if key in only_for_new and topic.name not in pending_names:
+            return False  # found only by the look back, so it answers the new topics alone
+        return (key, topic.name, current[topic.name]) not in done
+
+    competing = [i for i in fresh.values() if any(competes(i, t) for t in cfg.topics)]
+    stored_vectors = candidates.vectors([i.key for i in competing], model) if llm_ready else {}
+
+    def rank_all(embed) -> Ranking:
+        return rank(
+            competing,
+            cfg.topics,
             embed=embed,
             global_exclude=cfg.exclude,
             likes=likes if embed else None,
             dislikes=dislikes if embed else None,
             feedback_weight=float(cfg.settings["feedback_weight"]),
+            competes=competes,
+            known=stored_vectors if embed else None,
         )
-        ranked, mode = rank(kept, cfg.topics, **options)
-        if extra:
-            more, _ = rank(extra, pending, **options)
-            ranked = sorted(ranked + more, key=lambda s: s.score, reverse=True)
-        return ranked, mode
 
-    if fresh:
-        progress(f"Scoring {len(fresh)} items")
+    ranking = Ranking([], "embeddings" if llm_ready else "keywords")
+    if competing:
+        progress(f"Scoring {len(competing)} items")
         try:
-            scored, result.ranking = rank_all(ollama.embed if llm_ready else None)
+            ranking = rank_all(ollama.embed if llm_ready else None)
         except OllamaError as exc:
             result.warnings.append(f"Embedding failed ({exc}); used keyword matching instead.")
             llm_ready = False
-            scored, result.ranking = rank_all(None)
-    else:
-        result.ranking = "embeddings" if llm_ready else "keywords"
+            ranking = rank_all(None)
+    result.ranking = ranking.mode
+    scored = ranking.scored
     if not llm_ready and use_llm:
         result.warnings.append(
             f"Ollama is not reachable at {cfg.settings['ollama_url']}. Items were matched by keywords and described without a model."
@@ -238,12 +264,13 @@ def _scan(
     min_score = float(cfg.settings["min_score"])
     if result.ranking == "keywords":
         min_score = min(min_score, 0.5)  # one keyword hit is the lowest score in this mode
+
     def hold(entry: Scored) -> str | None:
         item = entry.item
-        if not trust_on or item.source != "github" or item.url in cleared:
+        if not trust_on or item.source != "github" or item.key in cleared:
             return None
         meta = item.meta
-        return thin_reason(http, meta.get("size_kb"), meta.get("stars"), meta.get("owner"), followers)
+        return thin_reason(http, meta.get("size_kb"), meta.get("stars"), meta.get("owner"), record.followers)
 
     chosen = select(
         scored,
@@ -253,23 +280,22 @@ def _scan(
         hold=hold,
     )
     result.explain = scored[:30]
+    # A rechecked repository that was not chosen is an ordinary candidate again; the choice was
+    # made like any other.
+    for key in cleared:
+        record.set_state(key, "seen")
+    held_until = (date_type.fromisoformat(local_date) + timedelta(days=HOLD_DAYS)).isoformat()
     for entry in scored:
+        record.decide(entry.item.key, entry.topic.name, entry.score, entry.outcome)
         if entry.held:
-            item = entry.item
-            seen[item.url] = {
-                "date": local_date,
-                "title": item.title,
-                "source": item.source,
-                "full_name": item.meta.get("full_name"),
-                "stars": item.meta.get("stars"),
-                "held": local_date,
-                "held_reason": entry.held,
-            }
-            result.warnings.append(f"Held back for a week: {item.title} ({entry.held}).")
-    # A rechecked repository that was not chosen leaves the list; the choice was made like any other.
-    for url in cleared:
-        if url in seen and seen[url].get("held"):
-            del seen[url]
+            record.set_state(entry.item.key, "held", topic=entry.topic.name, held_until=held_until)
+            result.warnings.append(f"Held back for a week: {entry.item.title} ({entry.held}).")
+    for key, why in ranking.left_out.items():
+        record.decide(key, "", 0.0, why)
+    for key, measures in ranking.measures.items():
+        for topic_name, similarity, hits in measures:
+            record.scores.append((key, topic_name, current[topic_name], similarity, hits))
+    record.vectors.update(ranking.vectors)
 
     if result.ranking == "keywords":
         # A preview: the items are chosen and described as always, but nothing is saved or sent.
@@ -299,7 +325,6 @@ def _scan(
 
     # 3. Describe the chosen items ------------------------------------------------------
     language = str(cfg.settings["summary_language"])
-    vectors = store.vectors()
     for number, entry in enumerate(chosen, start=1):
         item = entry.item
         progress(f"Writing note {number}/{len(chosen)}: {item.title}")
@@ -327,23 +352,19 @@ def _scan(
                 ranking=result.ranking,
             )
         )
-        seen[item.url] = {
-            "date": local_date,
-            "title": item.title,
-            "source": item.source,
-            "full_name": item.meta.get("full_name"),
-            "stars": item.meta.get("stars"),
-        }
-        if entry.vector:
-            vectors[item.url] = entry.vector
+        stars = item.meta.get("stars")
+        record.set_state(
+            item.key, "shown", topic=entry.topic.name, shown_stars=stars if isinstance(stars, int) else None
+        )
 
     # 4. Repositories reported earlier that gained many stars -----------------------------------
     if cfg.source_enabled("github"):
-        _add_rising(cfg, http, seen, now, local_date, result, progress)
+        _add_rising(cfg, http, candidates, record, now, local_date, result, progress)
 
     # 5. Save --------------------------------------------------------------------
-    store.save_seen(seen)
-    store.save_vectors(vectors)
+    record.chat_model = str(getattr(ollama, "chat_model", "") or cfg.settings.get("chat_model") or "")
+    record.keep = {candidates.key_for_url(url) for url in store.votes()}
+    candidates.save(record)
     day = store.merge_day(
         local_date, result.new_reports, result.skipped, result.warnings, result.ranking, at=now.isoformat()
     )
@@ -374,50 +395,41 @@ def _scan(
 def _add_rising(
     cfg: Config,
     http: Http,
-    seen: dict,
+    candidates: CandidateStore,
+    record: ScanRecord,
     now: datetime,
     local_date: str,
     result: RunResult,
     progress: Progress,
 ) -> None:
     horizon = (now - timedelta(days=int(cfg.settings["rising_days"]))).astimezone().date().isoformat()
-    tracked = {
-        meta["full_name"]: url
-        for url, meta in seen.items()
-        if meta.get("source") == "github"
-        and meta.get("full_name")
-        and isinstance(meta.get("stars"), int)
-        and not meta.get("gone")
-        and not meta.get("held")
-        and not meta.get("dropped")
-        and meta.get("date", "") >= horizon
-        and meta.get("date") != local_date
-    }
+    tracked: dict[str, StoredItem] = {}
+    for row in candidates.shown_repos(since=horizon, today=local_date):
+        tracked.setdefault(row.full_name, row)
     if not tracked:
         return
     progress("Checking star counts of earlier items")
     check = check_repos(http, list(tracked))
     for full_name in check.gone:
-        url = tracked[full_name]
-        seen[url]["gone"] = local_date
-        result.warnings.append(
-            f"{full_name}, shown on {_day_month(seen[url].get('date', ''))}, has been removed from GitHub since."
-        )
+        row = tracked[full_name]
+        record.set_state(row.key, "gone")
+        result.warnings.append(f"{full_name}, shown on {_day_month(row.state_on)}, has been removed from GitHub since.")
     for full_name, repo in check.current.items():
-        url = tracked[full_name]
-        before = seen[url]["stars"]
+        row = tracked[full_name]
+        record.observe(row.key, repo)
+        before = row.shown_stars or 0
         stars_now = repo["stars"]
         if stars_now >= before * 1.5 and stars_now - before >= 50:
-            seen[url]["stars"] = stars_now
+            record.update(row.key, shown_stars=stars_now)
             result.new_reports.append(
                 Report(
                     date=local_date,
-                    topic=_topic_of(url, result, cfg),
+                    topic=row.topic or cfg.topics[0].name,  # the topic it was first reported under
                     score=0.0,
                     source="github",
                     kind="repo",
                     title=full_name,
-                    url=url,
+                    url=row.url,
                     verdict="watch",
                     meta={
                         "stars_before": before,
@@ -431,43 +443,30 @@ def _add_rising(
 
 
 def _recheck_held(
-    cfg: Config,
     http: Http,
-    seen: dict,
+    candidates: CandidateStore,
+    record: ScanRecord,
     local_date: str,
     trust_on: bool,
-    followers: dict[str, int | None],
     result: RunResult,
     progress: Progress,
-) -> list[tuple[Item, str]]:
+) -> list[Item]:
     """Ask GitHub again about repositories held for HOLD_DAYS. Removed ones are marked gone, ones
-    still thin are dropped for good, and the rest come back as candidates with the date they were held."""
-    today = date_type.fromisoformat(local_date)
-    due: list[str] = []
-    for url, meta in seen.items():
-        held = meta.get("held")
-        if not held or not meta.get("full_name"):
-            continue
-        try:
-            if date_type.fromisoformat(held) + timedelta(days=HOLD_DAYS) <= today:
-                due.append(url)
-        except ValueError:
-            due.append(url)  # an unreadable date must not hold a repository forever
+    still thin are dropped for good, and the rest come back as candidates."""
+    due = candidates.held_due(local_date)
     if not due:
         return []
     progress("Checking repositories held back earlier")
-    back: list[tuple[Item, str]] = []
-    for url in due:
-        meta = seen[url]
-        name = meta["full_name"]
+    back: list[Item] = []
+    for row in due:
+        name = row.full_name
         try:
             raw = fetch_repo(http, name)
         except SourceError as exc:
             if exc.status in GITHUB_GONE:
-                meta.pop("held", None)
-                meta["gone"] = local_date
+                record.set_state(row.key, "gone")
                 result.warnings.append(
-                    f"{name}, held back on {_day_month(meta.get('date', ''))}, has been removed from GitHub since."
+                    f"{name}, held back on {_day_month(row.state_on)}, has been removed from GitHub since."
                 )
                 continue
             if exc.status == 403:
@@ -476,17 +475,19 @@ def _recheck_held(
         item = parse_repo(raw) if raw else None
         if item is None:
             continue
-        item_meta = item.meta
+        meta = item.meta
+        record.observe(row.key, meta)
         reason = (
-            thin_reason(http, item_meta.get("size_kb"), item_meta.get("stars"), item_meta.get("owner"), followers)
+            thin_reason(http, meta.get("size_kb"), meta.get("stars"), meta.get("owner"), record.followers)
             if trust_on
             else None
         )
         if reason is None:
-            back.append((item, meta["held"]))
+            if item.key != row.key:  # renamed since; the old name is not asked about again
+                record.set_state(row.key, "seen")
+            back.append(item)
         else:
-            meta.pop("held", None)
-            meta["dropped"] = local_date
+            record.set_state(row.key, "dropped")
     return back
 
 
@@ -497,13 +498,3 @@ def _day_month(iso_date: str) -> str:
     except ValueError:
         return iso_date or "an earlier day"
     return f"{day.day} {MONTHS[day.month - 1]}"
-
-
-def _topic_of(url: str, result: RunResult, cfg: Config) -> str:
-    """Rising items go under the topic they were first reported under, when we can tell."""
-    store = Store(cfg.state_dir)
-    for date in reversed(store.report_dates()):
-        for report in store.load_day(date)["reports"]:
-            if report.url == url and not report.rising:
-                return report.topic
-    return cfg.topics[0].name

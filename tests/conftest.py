@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import sqlite3
 import zlib
 from pathlib import Path
 
@@ -104,6 +106,27 @@ FORGEJO = {
 }
 
 
+def write_state(cfg: Config, name: str, data) -> None:
+    """A JSON file in the state folder, as an older version left it (seen.json, vectors.json)."""
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    (cfg.state_dir / name).write_text(json.dumps(data), encoding="utf-8")
+
+
+def db_rows(cfg: Config, sql: str, params: tuple = ()) -> list[dict]:
+    """Rows of the candidate store, read the way a person with sqlite3 would."""
+    conn = sqlite3.connect(cfg.state_dir / "radar.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in conn.execute(sql, params)]
+    finally:
+        conn.close()
+
+
+def stored_item(cfg: Config, key: str) -> dict | None:
+    rows = db_rows(cfg, "SELECT * FROM item WHERE key = ?", (key,))
+    return rows[0] if rows else None
+
+
 def _bow(text: str, dims: int = 256) -> list[float]:
     vec = [0.0] * dims
     for word in re.findall(r"[a-z0-9]+", text.lower()):
@@ -118,6 +141,7 @@ class FakeOllama:
         self.up = up
         self.chat_model = "fake-chat"
         self.chat_calls = 0
+        self.embedded: list[str] = []  # every document text sent to the embedder
         self.chat_answer = chat_answer or {
             "what": "A toolkit for running models locally.",
             "why": "It matches the local-first interest.",
@@ -136,6 +160,8 @@ class FakeOllama:
     def embed(self, texts: list[str], kind: str = "document") -> list[list[float]]:
         if not self.up:
             raise OllamaError("down")
+        if kind == "document":
+            self.embedded.extend(texts)
         return [_bow(t) for t in texts]
 
     def chat_json(self, system: str, user: str):

@@ -31,6 +31,19 @@ class Scored:
     vector: list[float] = field(default_factory=list)
     selected: bool = False
     held: str = ""  # why the trust check kept it back, when it did
+    outcome: str = ""  # set by select: shown, held, below_bar, topic_full or day_full
+
+
+@dataclass
+class Ranking:
+    """What rank found. `scored` holds every item that has a topic it may go under, best first."""
+
+    scored: list[Scored]
+    mode: str  # embeddings or keywords
+    left_out: dict[str, str] = field(default_factory=dict)  # item key: "lure" or "excluded"
+    vectors: dict[str, list[float]] = field(default_factory=dict)  # item key: vector made by this call
+    # item key: (topic name, similarity, keyword hits) for each topic the item competed for
+    measures: dict[str, list[tuple[str, float, int]]] = field(default_factory=dict)
 
 
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
@@ -112,48 +125,74 @@ def rank(
     likes: list[list[float]] | None = None,
     dislikes: list[list[float]] | None = None,
     feedback_weight: float = 0.2,
-) -> tuple[list[Scored], str]:
-    """Return every item with its best topic and score, best first, and the mode used."""
-    candidates = [i for i in items if not is_excluded(i, global_exclude) and not is_lure(i)]
-    if not candidates or not topics:
-        return [], "embeddings" if embed else "keywords"
+    competes: Callable[[Item, Topic], bool] | None = None,
+    known: dict[str, list[float]] | None = None,
+) -> Ranking:
+    """Give every item its best topic and score, best first.
 
-    mode = "keywords"
-    item_vectors: list[list[float]] = []
-    topic_vectors: list[list[list[float]]] = []
+    `competes(item, topic)` says whether an item competes for a topic in this scan (default:
+    always). An item that competes for no topic is left out and not embedded. `known` maps an
+    item key to a stored vector of the same embedding model, used instead of embedding again."""
+    ranking = Ranking([], "embeddings" if embed else "keywords")
+    plan: list[tuple[Item, list[Topic]]] = []
+    for item in items:
+        mine = [t for t in topics if competes is None or competes(item, t)]
+        if not mine:
+            continue
+        if is_lure(item):
+            ranking.left_out[item.key] = "lure"
+        elif is_excluded(item, global_exclude):
+            ranking.left_out[item.key] = "excluded"
+        else:
+            plan.append((item, mine))
+    if not plan:
+        return ranking
+
+    item_vectors: dict[str, list[float]] = {}
+    topic_vectors: dict[str, list[list[float]]] = {}
     if embed is not None:
         # An Ollama failure here raises; the pipeline catches it and retries in keyword mode.
-        topic_vectors = []
         for topic in topics:
-            texts = [topic.embed_text()]
-            if topic.keywords:
-                texts.append(", ".join(topic.keywords))
-            topic_vectors.append(embed(texts, "query"))
-        item_vectors = embed([item_text(i) for i in candidates], "document")
-        mode = "embeddings"
+            if any(topic in mine for _, mine in plan):
+                texts = [topic.embed_text()]
+                if topic.keywords:
+                    texts.append(", ".join(topic.keywords))
+                topic_vectors[topic.name] = embed(texts, "query")
+        stored = known or {}
+        missing = [item for item, _ in plan if item.key not in stored]
+        if missing:
+            ranking.vectors = dict(zip([i.key for i in missing], embed([item_text(i) for i in missing], "document")))
+        item_vectors = {**ranking.vectors, **{item.key: stored[item.key] for item, _ in plan if item.key in stored}}
 
-    scored: list[Scored] = []
-    for index, item in enumerate(candidates):
+    for item, mine in plan:
         best: Scored | None = None
-        for t_index, topic in enumerate(topics):
-            if is_excluded(item, topic.exclude):
-                continue
+        measures: list[tuple[str, float, int]] = []
+        for topic in mine:
             hits = keyword_hits(item, topic)
-            if mode == "embeddings":
-                vector = item_vectors[index]
-                sim = max(cosine(vector, tv) for tv in topic_vectors[t_index])
+            if embed is not None:
+                vector = item_vectors[item.key]
+                sim = max(cosine(vector, tv) for tv in topic_vectors[topic.name])
+                measures.append((topic.name, sim, hits))
+                if is_excluded(item, topic.exclude):
+                    continue
                 adjust = feedback_adjust(vector, likes or [], dislikes or [], feedback_weight)
                 score = sim + min(0.09, 0.03 * hits) + adjust
                 candidate = Scored(item, topic, score, sim, hits, adjust, vector)
             else:
+                if is_excluded(item, topic.exclude):
+                    continue
                 score = min(0.95, 0.5 + 0.15 * hits) if hits else 0.0
                 candidate = Scored(item, topic, score, 0.0, hits, 0.0, [])
             if best is None or candidate.score > best.score:
                 best = candidate
-        if best is not None:
-            scored.append(best)
-    scored.sort(key=lambda s: s.score, reverse=True)
-    return scored, mode
+        if measures:
+            ranking.measures[item.key] = measures
+        if best is None:
+            ranking.left_out[item.key] = "excluded"  # by the exclude list of every topic it competed for
+        else:
+            ranking.scored.append(best)
+    ranking.scored.sort(key=lambda s: s.score, reverse=True)
+    return ranking
 
 
 def select(
@@ -167,22 +206,28 @@ def select(
     """Take the best items above the bar, with a cap per topic and overall. No padding.
 
     `hold` is asked about an entry only when it would be chosen. It returns a reason to keep the
-    entry back, or None. A held entry takes no place, so the next candidate does."""
+    entry back, or None. A held entry takes no place, so the next candidate does. Every entry gets
+    an `outcome` that says what selection did with it."""
     chosen: list[Scored] = []
     per_topic: dict[str, int] = {}
     for entry in scored:
-        if len(chosen) >= max_items:
-            break
         if entry.score < min_score:
-            break
+            entry.outcome = "below_bar"
+            continue
+        if len(chosen) >= max_items:
+            entry.outcome = "day_full"
+            continue
         count = per_topic.get(entry.topic.name, 0)
         if count >= max_per_topic:
+            entry.outcome = "topic_full"
             continue
         reason = hold(entry) if hold else None
         if reason:
             entry.held = reason
+            entry.outcome = "held"
             continue
         per_topic[entry.topic.name] = count + 1
         entry.selected = True
+        entry.outcome = "shown"
         chosen.append(entry)
     return chosen

@@ -5,8 +5,40 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 VERDICTS = ("install", "read", "watch", "skip")
+
+# Path parts of huggingface.co that are not an organisation or user, so not a model.
+_HF_NOT_MODELS = {"papers", "datasets", "spaces", "docs", "blog", "api", "collections", "models", "organizations"}
+
+
+def _arxiv_id(value: str) -> str:
+    """An arXiv id without its version: 2610.12345v2 becomes 2610.12345."""
+    return re.sub(r"v\d+$", "", value.strip().removesuffix(".pdf"))
+
+
+def key_from_url(url: str, source: str | None = None) -> str:
+    """One key per item across sources, from the URL a source gave for it.
+
+    An arXiv paper is the same item on arXiv and on Hugging Face papers. Repository and model
+    names are compared in lower case, as GitHub and Hugging Face do. Forgejo servers can live
+    on any host, so a Forgejo URL needs its source to be told apart from an ordinary link."""
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower().removeprefix("www.")
+    path = [p for p in parts.path.split("/") if p]
+    if host == "github.com" and len(path) >= 2:
+        return f"github:{path[0]}/{path[1]}".lower()
+    if host in ("arxiv.org", "export.arxiv.org") and len(path) >= 2 and path[0] in ("abs", "pdf"):
+        return "arxiv:" + _arxiv_id("/".join(path[1:]))  # old ids have a slash: hep-th/9901001
+    if host == "huggingface.co" and path:
+        if path[0] == "papers" and len(path) >= 2:
+            return "arxiv:" + _arxiv_id(path[1])
+        if path[0] not in _HF_NOT_MODELS:
+            return "hf:" + "/".join(path[:2]).lower()
+    if source == "forgejo" and host and len(path) >= 2:
+        return f"forgejo:{host}/{path[0]}/{path[1]}".lower()
+    return f"url:{url}"
 
 
 def plain_title(title: str) -> str:
@@ -32,6 +64,15 @@ class Item:
     @property
     def id(self) -> str:
         return self.url
+
+    @property
+    def key(self) -> str:
+        """The item's key in the candidate store: the same paper from arXiv and from Hugging Face
+        has one key, see key_from_url."""
+        arxiv_id = self.meta.get("arxiv_id") if self.kind == "paper" else None
+        if isinstance(arxiv_id, str) and arxiv_id.strip():
+            return "arxiv:" + _arxiv_id(arxiv_id)
+        return key_from_url(self.url, self.source)
 
 
 @dataclass

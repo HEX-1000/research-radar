@@ -40,7 +40,8 @@ def test_github_readme_is_stripped(http_factory):
 
 def test_github_repo_check_reads_stars_and_license(http_factory):
     check = github.check_repos(http_factory(repo_stars=321), ["a/b", "c/d"])
-    assert check.current == {n: {"stars": 321, "license": "MIT", "language": "Python"} for n in ("a/b", "c/d")}
+    expected = {"stars": 321, "forks": None, "size_kb": None, "license": "MIT", "language": "Python"}
+    assert check.current == {n: expected for n in ("a/b", "c/d")}
     assert check.gone == []
 
 
@@ -48,7 +49,9 @@ def _repo_http(answers: dict[str, httpx.Response], asked: list[str]) -> Http:
     def handler(request: httpx.Request) -> httpx.Response:
         name = request.url.path.removeprefix("/repos/")
         asked.append(name)
-        return answers.get(name) or httpx.Response(200, json={"stargazers_count": 7, "license": None})
+        return answers.get(name) or httpx.Response(
+            200, json={"stargazers_count": 7, "forks_count": 1, "size": 64, "license": None}
+        )
 
     return Http(transport=httpx.MockTransport(handler), sleep=lambda seconds: None)
 
@@ -65,7 +68,7 @@ def test_github_repo_check_goes_on_past_deleted_and_blocked_repositories():
     http.close()
     assert check.gone == ["gone/one", "dmca/three"]  # a blocked repository is asked again next time
     assert sorted(check.current) == ["a/b", "c/d"]
-    assert check.current["a/b"] == {"stars": 7, "license": None, "language": None}
+    assert check.current["a/b"] == {"stars": 7, "forks": 1, "size_kb": 64, "license": None, "language": None}
 
 
 @pytest.mark.parametrize(

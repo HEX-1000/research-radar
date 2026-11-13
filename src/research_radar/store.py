@@ -1,4 +1,5 @@
-"""Everything the app remembers, as small JSON files under <home>/state."""
+"""What the app remembers as small JSON files under <home>/state: day reports, votes, deliveries,
+source windows and topic marks. Every item a scan received lives in state/radar.db (candidates.py)."""
 
 from __future__ import annotations
 
@@ -33,14 +34,6 @@ class Store:
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, path)
 
-    # seen items --------------------------------------------------------------
-
-    def seen(self) -> dict[str, dict[str, Any]]:
-        return self._read(self.dir / "seen.json", {})
-
-    def save_seen(self, seen: dict[str, dict[str, Any]]) -> None:
-        self._write(self.dir / "seen.json", seen)
-
     # per source last successful scan ------------------------------------------------
 
     def last_runs(self) -> dict[str, str]:
@@ -59,25 +52,10 @@ class Store:
     def save_topic_marks(self, marks: dict[str, str]) -> None:
         self._write(self.dir / "topics.json", marks)
 
-    # vectors of reported items (needed to learn from votes) --------------------------
-
-    def vectors(self) -> dict[str, list[float]]:
-        return self._read(self.dir / "vectors.json", {})
-
-    def save_vectors(self, vectors: dict[str, list[float]]) -> None:
-        self._write(self.dir / "vectors.json", vectors)
-
-    # votes ---------------------------------------------------------------
+    # votes, by URL; their vectors are in the candidate store ----------------------------
 
     def votes(self) -> dict[str, int]:
         return self._read(self.dir / "feedback.json", {})
-
-    def vote_vectors(self) -> tuple[list[list[float]], list[list[float]]]:
-        votes = self.votes()
-        vectors = self.vectors()
-        likes = [vectors[u] for u, v in votes.items() if v > 0 and u in vectors]
-        dislikes = [vectors[u] for u, v in votes.items() if v < 0 and u in vectors]
-        return likes, dislikes
 
     def set_vote(self, date: str, url: str, vote: int) -> int:
         """Set a vote. Voting the same way twice clears it. Returns the stored vote."""

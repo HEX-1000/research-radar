@@ -174,7 +174,7 @@ def fetch_repo(http: Http, full_name: str) -> dict | None:
 class RepoCheck:
     """What GitHub says today about repositories reported earlier (for 'rising')."""
 
-    current: dict[str, dict] = field(default_factory=dict)  # full name: stars, license, language
+    current: dict[str, dict] = field(default_factory=dict)  # full name: stars, forks, size_kb, license, language
     gone: list[str] = field(default_factory=list)
 
 
@@ -194,7 +194,13 @@ def check_repos(http: Http, full_names: list[str]) -> RepoCheck:
             break
         stars = data.get("stargazers_count") if isinstance(data, dict) else None
         if isinstance(stars, int):
-            check.current[full_name] = {"stars": stars, "license": _license(data), "language": data.get("language")}
+            check.current[full_name] = {
+                "stars": stars,
+                "forks": data.get("forks_count"),
+                "size_kb": data.get("size"),
+                "license": _license(data),
+                "language": data.get("language"),
+            }
     return check
 
 
