@@ -225,7 +225,7 @@ def _scan(
     # 2. Rank --------------------------------------------------------------------
     # An item competes for a topic once per version of the topic's text and of the embedding
     # model, so an item fetched again is not scored again and an edited topic gets one look.
-    likes, dislikes = candidates.vote_vectors(store.votes(), model)
+    likes, dislikes = candidates.vote_vectors(model)
     done = candidates.scored(fresh, model)
     pending_names = {t.name for t in pending}
 
@@ -371,7 +371,6 @@ def _scan(
 
     # 5. Save --------------------------------------------------------------------
     record.chat_model = str(getattr(ollama, "chat_model", "") or cfg.settings.get("chat_model") or "")
-    record.keep = {candidates.key_for_url(url) for url in store.votes()}
     candidates.save(record)
     day = store.merge_day(
         local_date, result.new_reports, result.skipped, result.warnings, result.ranking, at=now.isoformat()

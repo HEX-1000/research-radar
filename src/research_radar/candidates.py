@@ -4,6 +4,9 @@ that change. One SQLite file, state/radar.db, standard library only.
 It replaces seen.json and vectors.json. The first scan that writes builds it from those two files
 and renames them to *.migrated. Until that scan saves, the store lives in memory, so a scan that
 fails or turns out to be a keyword preview leaves every file as it was.
+
+Schema 2 adds the `label` and `vote` tables. Votes used to live in feedback.json; a scan, the
+interface or any other writer that opens a schema 1 file upgrades it in place and retires that file.
 """
 
 from __future__ import annotations
@@ -22,9 +25,27 @@ from .models import Item, key_from_url
 from .sources.github import HOLD_DAYS
 
 DB_NAME = "radar.db"
-SCHEMA_VERSION = 1
-JSON_FILES = ("seen.json", "vectors.json")
+SCHEMA_VERSION = 2
+JSON_FILES = ("seen.json", "vectors.json", "feedback.json")
+FEEDBACK_FILE = "feedback.json"
+BUSY_TIMEOUT = 10  # seconds a writer waits for another one (the interface, `radar label`, a scan)
 VECTOR_DAYS = 30  # vectors of items not shown and not voted are kept this long after first seen
+
+SCHEMA_2_TABLES = """
+CREATE TABLE label (
+  key   TEXT NOT NULL REFERENCES item(key),
+  topic TEXT NOT NULL,
+  value TEXT NOT NULL,
+  at    TEXT NOT NULL,
+  PRIMARY KEY (key, topic)
+);
+CREATE TABLE vote (
+  key   TEXT PRIMARY KEY REFERENCES item(key),
+  value INTEGER NOT NULL,
+  at    TEXT NOT NULL,
+  via   TEXT NOT NULL
+);
+"""
 
 SCHEMA = """
 CREATE TABLE item (
@@ -91,7 +112,7 @@ CREATE TABLE vector (
   data  BLOB NOT NULL,
   PRIMARY KEY (key, model)
 );
-"""
+""" + SCHEMA_2_TABLES
 
 _KIND_BY_SOURCE = {
     "github": "repo",
@@ -148,7 +169,6 @@ class ScanRecord:
     followers: dict[str, int | None] = field(default_factory=dict)  # owner login in lower case, as asked
     vectors: dict[str, list[float]] = field(default_factory=dict)
     states: dict[str, dict[str, Any]] = field(default_factory=dict)  # key: item columns to set
-    keep: set[str] = field(default_factory=set)  # keys of voted items, whose vectors are kept
 
     @property
     def at(self) -> str:
@@ -200,7 +220,7 @@ def _unpack(data: bytes) -> list[float]:
 
 
 def _connect(target: str, **kwargs: Any) -> sqlite3.Connection:
-    conn = sqlite3.connect(target, isolation_level=None, **kwargs)  # transactions are begun by hand
+    conn = sqlite3.connect(target, isolation_level=None, timeout=BUSY_TIMEOUT, **kwargs)  # transactions by hand
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -219,8 +239,11 @@ def _plus_days(day: str, days: int, fallback: str) -> str:
 class CandidateStore:
     """state/radar.db. Open it with `CandidateStore.open` and use it as a context manager."""
 
-    def __init__(self, conn: sqlite3.Connection, path: Path, *, write: bool, create: bool) -> None:
+    def __init__(
+        self, conn: sqlite3.Connection, path: Path, *, write: bool, create: bool, schema: int = SCHEMA_VERSION
+    ) -> None:
         self.conn = conn
+        self.schema = schema  # 1 only for a file opened read-only before it was upgraded
         self.path = path
         self.write = write
         self.create = create  # built in memory from the JSON files; written to `path` at the first save
@@ -246,7 +269,16 @@ class CandidateStore:
                     )
                 if version == SCHEMA_VERSION:
                     return cls(conn, path, write=write, create=False)
-                conn.close()  # an empty file left by something else: build the store again
+                if version == 1:
+                    if write:
+                        try:
+                            _upgrade_1_to_2(conn, state_dir)
+                        except BaseException:
+                            conn.close()
+                            raise
+                        return cls(conn, path, write=True, create=False)
+                    return cls(conn, path, write=False, create=False, schema=1)  # votes still in feedback.json
+                conn.close()  # version 0, an empty file left by something else: build the store again
         except sqlite3.Error as exc:
             raise StoreError(f"Could not open {path}: {exc}.") from exc
 
@@ -309,9 +341,12 @@ class CandidateStore:
         row = self.conn.execute("SELECT key FROM link WHERE url = ?", (url,)).fetchone()
         return row[0] if row else key_from_url(url)
 
-    def vote_vectors(self, votes: dict[str, int], model: str) -> tuple[list[list[float]], list[list[float]]]:
-        """Vectors of liked and disliked items. Votes are kept by URL; the link table finds the item."""
-        keyed = {self.key_for_url(url): vote for url, vote in votes.items() if vote}
+    def vote_vectors(self, model: str) -> tuple[list[list[float]], list[list[float]]]:
+        """Vectors of liked and disliked items, from the votes of the store."""
+        if self.schema >= 2:
+            keyed = {key: value for key, value in self.conn.execute("SELECT key, value FROM vote")}
+        else:  # a schema 1 file opened for reading: its votes are still in feedback.json
+            keyed = {self.key_for_url(url): v for url, v in _read_feedback(self.path.parent).items() if v}
         vectors = self.vectors(keyed, model)
         likes = [vectors[k] for k, v in keyed.items() if v > 0 and k in vectors]
         dislikes = [vectors[k] for k, v in keyed.items() if v < 0 and k in vectors]
@@ -442,14 +477,165 @@ def _write(conn: sqlite3.Connection, record: ScanRecord) -> None:
         names = ", ".join(f"{name} = ?" for name in columns)
         conn.execute(f"UPDATE item SET {names} WHERE key = ?", (*columns.values(), key))
 
-    # Only voted items need their vector after a few days; shown items keep theirs too.
+    # After a few days only shown, voted and labelled items need their vector.
     cutoff = (record.now - timedelta(days=VECTOR_DAYS)).astimezone(timezone.utc).isoformat()
-    old = conn.execute(
-        "SELECT vector.key FROM vector JOIN item ON item.key = vector.key"
-        " WHERE item.state != 'shown' AND item.first_seen < ?",
+    conn.execute(
+        "DELETE FROM vector WHERE key IN (SELECT item.key FROM item WHERE item.state != 'shown'"
+        " AND item.first_seen < ? AND item.key NOT IN (SELECT key FROM vote)"
+        " AND item.key NOT IN (SELECT key FROM label))",
         (cutoff,),
-    ).fetchall()
-    conn.executemany("DELETE FROM vector WHERE key = ?", [(k,) for (k,) in old if k not in record.keep])
+    )
+
+
+# votes ------------------------------------------------------------------------------------------
+
+
+def _read_feedback(state_dir: Path) -> dict[str, int]:
+    """feedback.json of an older version: vote by URL. A damaged file is kept aside, as Store does."""
+    path = state_dir / FEEDBACK_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        try:
+            path.replace(path.with_suffix(path.suffix + ".broken"))
+        except OSError:
+            pass
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {url: v for url, v in data.items() if isinstance(url, str) and v in (1, -1)}
+
+
+def _write_feedback(state_dir: Path, votes: dict[str, int]) -> None:
+    state_dir.mkdir(parents=True, exist_ok=True)
+    path = state_dir / FEEDBACK_FILE
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(votes, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _key_for_link(conn: sqlite3.Connection, url: str) -> str | None:
+    row = conn.execute("SELECT key FROM link WHERE url = ?", (url,)).fetchone() or conn.execute(
+        "SELECT key FROM item WHERE url = ?", (url,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _import_votes(conn: sqlite3.Connection, state_dir: Path) -> bool:
+    """Copy feedback.json into `vote`, inside the caller's transaction. A vote whose URL has no item
+    has no vector and had no effect, so it is dropped. False when there is no file to retire."""
+    path = state_dir / FEEDBACK_FILE
+    if not path.exists():
+        return False
+    votes = _read_feedback(state_dir)
+    if not path.exists():  # a damaged file was set aside
+        return False
+    try:
+        at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+    except OSError:
+        at = datetime.now(timezone.utc).isoformat()
+    for url, value in votes.items():
+        key = _key_for_link(conn, url)
+        if key:
+            conn.execute("INSERT OR REPLACE INTO vote (key, value, at, via) VALUES (?, ?, ?, 'tui')", (key, int(value), at))
+    return True
+
+
+def _retire_feedback(state_dir: Path) -> None:
+    old = state_dir / FEEDBACK_FILE
+    try:
+        if old.exists():
+            old.replace(old.with_name(FEEDBACK_FILE + ".migrated"))
+    except OSError:
+        pass  # the votes are in the store; a stale copy only matters to an older version
+
+
+def _upgrade_1_to_2(conn: sqlite3.Connection, state_dir: Path) -> None:
+    """Add `label` and `vote` and import feedback.json, in one transaction. The version is read
+    again inside it, so two writers opening the same file upgrade it once."""
+    imported = False
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if _version(conn) == 1:
+            for statement in SCHEMA_2_TABLES.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
+            imported = _import_votes(conn, state_dir)
+            conn.execute("PRAGMA user_version = 2")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    if imported:
+        _retire_feedback(state_dir)
+
+
+def read_votes(state_dir: Path) -> dict[str, int]:
+    """Every vote by URL (every URL of a voted item). From `vote` at schema 2, else from feedback.json."""
+    path = state_dir / DB_NAME
+    if path.exists():
+        try:
+            conn = _connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+            try:
+                if _version(conn) >= 2:
+                    votes: dict[str, int] = {}
+                    for url, value in conn.execute(
+                        "SELECT link.url, vote.value FROM vote JOIN link ON link.key = vote.key"
+                        " UNION SELECT item.url, vote.value FROM vote JOIN item ON item.key = vote.key"
+                    ):
+                        votes[url] = value
+                    return votes
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            raise StoreError(f"Could not read the votes in {path}: {exc}.") from exc
+    return _read_feedback(state_dir)
+
+
+def write_vote(state_dir: Path, url: str, vote: int, via: str, now: datetime | None = None) -> None:
+    """Set (1 or -1) or clear (0) the vote on the item behind `url`. With no radar.db this writes
+    feedback.json as before; otherwise it opens the store for writing, upgrading a schema 1 file.
+    It never creates the store, and a URL with no item is dropped."""
+    path = state_dir / DB_NAME
+    at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+
+    def to_file() -> None:
+        votes = _read_feedback(state_dir)
+        votes.pop(url, None)
+        if vote:
+            votes[url] = vote
+        _write_feedback(state_dir, votes)
+
+    if not path.exists():
+        to_file()
+        return
+    try:
+        conn = _connect(str(path))
+        try:
+            version = _version(conn)
+            if version > SCHEMA_VERSION:
+                raise StoreError(
+                    f"{path} was made by a newer version of Research Radar (schema {version}). Run `radar update`."
+                )
+            if version == 0:  # an empty file; the next scan builds the store
+                to_file()
+                return
+            if version == 1:
+                _upgrade_1_to_2(conn, state_dir)
+            key = _key_for_link(conn, url)
+            if key is None:
+                return
+            if vote:
+                conn.execute("INSERT OR REPLACE INTO vote (key, value, at, via) VALUES (?, ?, ?, ?)", (key, vote, at, via))
+            else:
+                conn.execute("DELETE FROM vote WHERE key = ?", (key,))
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise StoreError(f"Could not write the vote to {path}: {exc}.") from exc
 
 
 # migration from seen.json and vectors.json ------------------------------------------------------
@@ -557,3 +743,5 @@ def _build(conn: sqlite3.Connection, state_dir: Path, embed_model: str, now: dat
         conn.execute(
             "INSERT OR REPLACE INTO vector (key, model, data) VALUES (?, ?, ?)", (key, embed_model, _pack(vector))
         )
+
+    _import_votes(conn, state_dir)  # _persist retires feedback.json together with the other two files

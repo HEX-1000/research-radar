@@ -23,6 +23,8 @@ what makes an update reach everyone.
 - The same paper from arXiv and from Hugging Face papers is one item.
 - arXiv is searched from 5 days before the last good run, because a paper is announced a few days after it is submitted; papers already seen are not shown again.
 - An arXiv search reads further pages (up to 5 pages of 100) until a page comes back short.
+- `state/radar.db` is now schema 2: it holds your votes (`vote`) and has a `label` table for the coming `radar label`. A schema 1 file is upgraded in place the first time a scan or a vote writes to it, and `feedback.json` is imported and renamed to `feedback.json.migrated`. An older version finds no `feedback.json` and would not see your votes.
+- A vector is kept for an item you voted on or labelled, not only for shown ones. Every connection to the store waits up to 10 seconds when another one is writing.
 
 ## 0.3.1
 

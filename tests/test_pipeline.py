@@ -212,7 +212,7 @@ def test_votes_flip_and_feed_back_into_ranking(make_cfg, http_factory):
     assert store.set_vote(result.date, url, -1) == -1
     model = cfg.settings["embed_model"]
     with CandidateStore.open(cfg.state_dir, embed_model=model, now=NOW, write=False) as candidates:
-        likes, dislikes = candidates.vote_vectors(store.votes(), model)  # found through the link table
+        likes, dislikes = candidates.vote_vectors(model)
     assert likes == [] and len(dislikes) == 1
     assert store.load_day(result.date)["reports"][0].vote in (-1, 0)
 

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from . import candidates
 from .models import Report, SkippedSource
 
 
@@ -52,21 +53,15 @@ class Store:
     def save_topic_marks(self, marks: dict[str, str]) -> None:
         self._write(self.dir / "topics.json", marks)
 
-    # votes, by URL; their vectors are in the candidate store ----------------------------
+    # votes, by URL; kept in the candidate store (feedback.json before schema 2) ----------------
 
     def votes(self) -> dict[str, int]:
-        return self._read(self.dir / "feedback.json", {})
+        return candidates.read_votes(self.dir)
 
-    def set_vote(self, date: str, url: str, vote: int) -> int:
+    def set_vote(self, date: str, url: str, vote: int, via: str = "tui") -> int:
         """Set a vote. Voting the same way twice clears it. Returns the stored vote."""
-        votes = self.votes()
-        current = votes.get(url, 0)
-        vote = 0 if current == vote else vote
-        if vote:
-            votes[url] = vote
-        else:
-            votes.pop(url, None)
-        self._write(self.dir / "feedback.json", votes)
+        vote = 0 if self.votes().get(url, 0) == vote else vote
+        candidates.write_vote(self.dir, url, vote, via)
         day = self.load_day(date)
         for report in day["reports"]:
             if report.url == url:

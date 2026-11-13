@@ -95,7 +95,7 @@ To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
 | `f1` or `?` | all keys, the version, and where your files are |
 | `q` | quit |
 
-On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`), unless Ollama or the embedding model is missing or the example topics are still in place. Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model.
+On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`), unless Ollama or the embedding model is missing or the example topics are still in place. Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model. Votes are stored in `state/radar.db`; an older `feedback.json` is imported into it by the first scan or vote.
 
 ## A desktop icon (Windows)
 

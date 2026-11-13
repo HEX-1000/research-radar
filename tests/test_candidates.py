@@ -142,7 +142,7 @@ def test_the_first_scan_moves_seen_and_vectors_into_the_store(make_cfg, http_fac
     assert sorted((r["key"], r["model"]) for r in vectors) == [("github:old/shown", model), ("github:voted/elsewhere", model)]
     assert stored_item(cfg, "github:voted/elsewhere")["state"] == "seen"  # a vector without an entry is kept for its vote
     with CandidateStore.open(state, embed_model=model, now=NOW, write=False) as candidates:
-        likes, dislikes = candidates.vote_vectors(Store(state).votes(), model)
+        likes, dislikes = candidates.vote_vectors(model)
     assert likes == [] and dislikes == [_vector(2)]
 
 
