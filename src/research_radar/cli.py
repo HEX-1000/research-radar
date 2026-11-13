@@ -79,6 +79,8 @@ def cmd_init(home_arg: str | None) -> int:
 def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
     from .pipeline import scan
 
+    if cfg.problem:
+        print(f"warning: {cfg.problem}", flush=True)
     result = scan(cfg, days=days, use_llm=not no_llm, progress=lambda m: print(m, flush=True))
     print()
     print(f"{len(result.new_reports)} new items ({result.fetched} fetched). Note: {result.note_path}")
@@ -254,6 +256,9 @@ def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
     from .sources import arxiv, forgejo, github, huggingface
 
     results: list[bool] = []
+    if cfg.problem:
+        print(f"FAIL  interests.yaml: {cfg.problem}")
+        results.append(False)
     s = cfg.settings
     ollama = Ollama(s["ollama_url"], s["embed_model"], s["chat_model"])
 
@@ -332,13 +337,19 @@ def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
         if cfg.source_enabled("forgejo"):
             for instance in cfg.sources["forgejo"].get("instances", []):
                 def probe_forgejo(instance=instance) -> str:
-                    data = http.get_json(
-                        f"https://{instance}/api/v1/repos/search", params={"q": "python", "limit": 3}
-                    )
+                    env, token = cfg.forgejo_token(instance)
+                    try:
+                        data = http.get_json(
+                            forgejo.search_url(instance),
+                            params={"q": "python", "limit": 3},
+                            headers=forgejo.auth_headers(token),
+                        )
+                    except SourceError as exc:
+                        raise SourceError(f"{exc}{forgejo.token_hint(env, token) if exc.status == 429 else ''}") from exc
                     items = forgejo.parse_repos(data, instance, long_ago)
                     if not items:
                         raise SourceError("search worked but no repository could be read")
-                    return f"read {items[0].url}"
+                    return f"read {items[0].url} ({f'token from {env}' if token else 'no token'})"
 
                 results.append(_probe(f"forgejo ({instance})", probe_forgejo))
     finally:

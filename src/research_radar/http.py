@@ -15,7 +15,13 @@ MAX_GITHUB_WAIT = 90.0  # seconds a scan is willing to wait for a GitHub rate li
 
 
 class SourceError(Exception):
-    """A source could not be read. The scan goes on without it."""
+    """A source could not be read. The scan goes on without it.
+
+    `status` is the HTTP status when the server answered with an error, else None."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class Http:
@@ -94,7 +100,9 @@ class Http:
                 self._sleep(_retry_after(response, default=3.0 * attempt))
                 continue
             if response.status_code >= 400:
-                raise SourceError(f"{host}: HTTP {response.status_code}")
+                reason = _short_reason(response)
+                detail = f" ({reason})" if reason else ""
+                raise SourceError(f"{host}: HTTP {response.status_code}{detail}", status=response.status_code)
             return response
 
     def get_json(self, url: str, **kwargs: Any) -> Any:
@@ -103,6 +111,24 @@ class Http:
             return response.json()
         except ValueError as exc:
             raise SourceError(f"{urlparse(url).netloc}: response is not JSON") from exc
+
+
+def _short_reason(response: httpx.Response) -> str:
+    """What the server said about an error, when it said it in plain text or JSON. HTML pages are skipped."""
+    kind = response.headers.get("content-type", "").lower()
+    if "json" in kind:
+        try:
+            data = response.json()
+        except ValueError:
+            return ""
+        text = str(data.get("message", "")) if isinstance(data, dict) else ""
+    elif kind.startswith("text/plain"):
+        text = response.text
+    else:
+        return ""
+    text = " ".join(text.split())
+    limit = 240
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "..."
 
 
 def _github_message(response: httpx.Response) -> str:

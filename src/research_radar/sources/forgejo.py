@@ -64,6 +64,25 @@ def parse_repos(data: object, instance: str, since: datetime) -> list[Item]:
     return items
 
 
+def search_url(instance: str) -> str:
+    return f"https://{instance}/api/v1/repos/search"
+
+
+def auth_headers(token: str | None) -> dict[str, str] | None:
+    # Sent only with requests to the server the token belongs to. httpx drops the header on a
+    # redirect to another host.
+    return {"Authorization": f"token {token}"} if token else None
+
+
+def token_hint(env: str, token: str | None) -> str:
+    """What to do about a refusal when no token was sent."""
+    if token:
+        return ""
+    if env:
+        return f". Searches with an access token still work: put one in the environment variable {env} (see the README)"
+    return ". Searches with an access token may still work: name its environment variable under sources.forgejo.token_env"
+
+
 def fetch(ctx: FetchContext) -> list[Item]:
     opts = ctx.config.sources[NAME]
     instances = [str(i).strip().removeprefix("https://").strip("/") for i in opts.get("instances", ["codeberg.org"])]
@@ -72,21 +91,29 @@ def fetch(ctx: FetchContext) -> list[Item]:
     errors: list[str] = []
     ok = 0
     for instance in instances:
-        for topic in ctx.config.topics:
-            queries = topic.source_option(NAME, "queries") or topic.keywords[:2]
-            for term in queries:
-                params = {"q": str(term), "sort": "created", "order": "desc", "limit": per_query}
-                try:
-                    data = ctx.http.get_json(
-                        f"https://{instance}/api/v1/repos/search",
-                        params=params,
-                        bucket=instance,
-                        min_interval=1.0,
-                    )
-                    for item in parse_repos(data, instance, ctx.since):
-                        items.setdefault(item.url, item)
-                    ok += 1
-                except SourceError as exc:
-                    errors.append(f"{instance} '{term}': {exc}")
+        env, token = ctx.config.forgejo_token(instance)
+        terms = [str(t) for topic in ctx.config.topics for t in (topic.source_option(NAME, "queries") or topic.keywords[:2])]
+        for term in terms:
+            params = {"q": term, "sort": "created", "order": "desc", "limit": per_query}
+            try:
+                data = ctx.http.get_json(
+                    search_url(instance),
+                    params=params,
+                    headers=auth_headers(token),
+                    bucket=instance,
+                    min_interval=1.0,
+                )
+                for item in parse_repos(data, instance, ctx.since):
+                    items.setdefault(item.url, item)
+                ok += 1
+            except SourceError as exc:
+                # The other queries would fail the same way, so they are not sent; the next scan collects the gap.
+                if exc.status == 429:
+                    errors.append(f"{instance} refuses searches for now, the scan skipped it: {exc}{token_hint(env, token)}")
+                    break
+                if exc.status == 401 and token:
+                    errors.append(f"{instance} did not accept the access token in {env}; create a new one ({exc})")
+                    break
+                errors.append(f"{instance} '{term}': {exc}")
     settle(ctx, NAME, ok, errors)
     return list(items.values())

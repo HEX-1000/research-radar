@@ -76,6 +76,10 @@ def _empty_key(date: str) -> str:
     return f"{date}|empty"
 
 
+def _alert_key(date: str) -> str:
+    return f"{date}|alert"
+
+
 def pending_reports(cfg: Config, store: Store, channel: str, today: str) -> list[Report]:
     """Reports from the last few days that this channel has not delivered yet."""
     done = set(store.delivered().get(channel, []))
@@ -100,6 +104,7 @@ def build_digest(cfg: Config, store: Store, date: str, reports: list[Report]) ->
         skipped=day["skipped"],
         warnings=day["warnings"],
         ranking=day["ranking"] or "embeddings",
+        alert=cfg.problem,
     )
 
 
@@ -326,12 +331,15 @@ def deliver_pending(
             else:
                 reports = pending_reports(cfg, store, channel, today)
                 date = today
+            delivered = store.delivered().get(channel, [])
             empty_note = False
-            if not reports:
+            # A broken interests.yaml is reported once a day per channel, even when nothing is new.
+            alert_due = bool(cfg.problem) and not only_date and _alert_key(today) not in delivered
+            if not reports and not alert_due:
                 if only_date or not cfg.delivery["send_when_empty"]:
                     result.note = "nothing new to send"
                     continue
-                if _empty_key(today) in store.delivered().get(channel, []):
+                if _empty_key(today) in delivered:
                     result.note = "already told you there was nothing new"
                     continue
                 empty_note = True
@@ -340,8 +348,11 @@ def deliver_pending(
                 result.dry_run = True
                 continue
             _send(cfg, channel, build_digest(cfg, store, date, reports))
-            store.mark_delivered(channel, [delivery_key(r) for r in reports] + ([_empty_key(today)] if empty_note else []))
+            extra = ([_empty_key(today)] if empty_note else []) + ([_alert_key(today)] if alert_due else [])
+            store.mark_delivered(channel, [delivery_key(r) for r in reports] + extra)
             result.sent = len(reports)
+            if not reports:
+                result.note = "sent the interests.yaml warning"
         except DeliveryError as exc:
             result.error = str(exc)
         except Exception as exc:  # a scan must survive anything the sending code throws

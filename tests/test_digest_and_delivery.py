@@ -250,6 +250,32 @@ def test_send_when_empty_tells_you_once_a_day(make_cfg, http_factory, smtp):
     assert second.deliveries[0].note == "already told you there was nothing new"
 
 
+def test_a_broken_interests_file_is_reported_once_a_day_even_when_nothing_is_new(make_cfg, http_factory, smtp):
+    cfg = make_cfg_quiet(email_cfg(make_cfg))
+    cfg.problem = "interests.yaml is not valid YAML at line 9, column 2: oops. Until the file is fixed, ..."
+    first = run(cfg, http_factory())
+    second = run(cfg, http_factory(), now=NOW + timedelta(hours=1))
+    assert first.new_reports == [] and len(smtp.outbox) == 1
+    message = smtp.outbox[0]
+    assert message["Subject"] == "Research Radar 2026-10-27: interests.yaml needs fixing"
+    assert "ACTION NEEDED: interests.yaml is not valid YAML at line 9" in message.get_body(("plain",)).get_content()
+    assert "Action needed:" in message.get_body(("html",)).get_content()
+    assert first.deliveries[0].note == "sent the interests.yaml warning"
+    assert second.deliveries[0].note == "nothing new to send"
+
+
+def test_the_alert_comes_before_the_items_everywhere():
+    digest = Digest(date="2026-10-27", reports=[report("try-me", "install")], alert="interests.yaml is broken <here>")
+    assert digest.subject() == "Research Radar 2026-10-27: interests.yaml needs fixing, 1 new item"
+    text = render_text(digest)
+    assert text.index("ACTION NEEDED") < text.index("try-me")
+    page = render_html(digest)
+    assert page.index("<b>Action needed:</b>") < page.index(">try-me</a>") and "&lt;here&gt;" in page
+    assert "Action needed: fix interests.yaml" in page.split("<table", 1)[0]  # the inbox preview line
+    telegram = render_telegram(digest)[0]
+    assert telegram.index("<b>Action needed:</b> interests.yaml is broken &lt;here&gt;") < telegram.index("try-me")
+
+
 def make_cfg_quiet(cfg):
     cfg.settings["min_score"] = 0.99
     return cfg

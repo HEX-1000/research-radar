@@ -81,6 +81,7 @@ class Digest:
     skipped: list[SkippedSource] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     ranking: str = "embeddings"
+    alert: str = ""  # something the reader must fix, shown first (a broken interests.yaml)
 
     # selection and order ----------------------------------------------------------
 
@@ -122,6 +123,9 @@ class Digest:
 
     def subject(self) -> str:
         count = len(self.reports)
+        if self.alert:
+            text = f"Research Radar {self.date}: interests.yaml needs fixing"
+            return text + (f", {count} new item{'s' if count != 1 else ''}" if count else "")
         if count == 0:
             return f"Research Radar {self.date}: nothing new"
         text = f"Research Radar {self.date}: {count} new item{'s' if count != 1 else ''}"
@@ -155,6 +159,8 @@ def _kind_line(report: Report) -> str:
 
 def render_text(digest: Digest) -> str:
     lines = [f"RESEARCH RADAR, {long_date(digest.date)}", digest.summary_line(), ""]
+    if digest.alert:
+        lines.extend([f"ACTION NEEDED: {digest.alert}", ""])
     for name, entries in digest.groups():
         lines.append(f"== {name} ({len(entries)}) ==")
         lines.append("")
@@ -220,6 +226,8 @@ def _telegram_item(report: Report) -> str:
 def render_telegram(digest: Digest) -> list[str]:
     """Telegram messages in HTML mode, split at item boundaries to stay under the length limit."""
     blocks = [f"<b>Research Radar</b> · {_tg(long_date(digest.date))}\n{_tg(digest.summary_line())}"]
+    if digest.alert:
+        blocks.append(f"<b>Action needed:</b> {_tg(digest.alert)}")
     for name, entries in digest.groups():
         blocks.append(f"<b>{_tg(name)}</b> ({len(entries)})")
         blocks.extend(_telegram_item(r) for r in entries)
@@ -323,6 +331,14 @@ def _html_card(report: Report) -> str:
 
 def render_html(digest: Digest) -> str:
     rows: list[str] = []
+    if digest.alert:
+        rows.append(
+            '<tr><td style="padding:10px 0 4px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="b-watch" '
+            'style="background:#fdf3dc;color:#7a5200;border-radius:8px;">'
+            f'<tr><td class="pad" style="padding:14px 18px;font-family:{FONT};font-size:14px;line-height:1.5;">'
+            f"<b>Action needed:</b> {_e(digest.alert)}</td></tr></table></td></tr>"
+        )
     for name, entries in digest.groups():
         rows.append(
             f'<tr><td class="text" style="padding:14px 2px 8px;font-family:{FONT};font-size:13px;font-weight:700;'
@@ -358,7 +374,7 @@ def render_html(digest: Digest) -> str:
             + "".join(f"<li>{_e(n)}</li>" for n in notes)
             + "</ul></td></tr>"
         )
-    preheader = digest.summary_line()
+    preheader = ("Action needed: fix interests.yaml · " if digest.alert else "") + digest.summary_line()
     if digest.groups():
         first = digest.groups()[0][1][0]
         preheader += " · " + plain_title(first.title)

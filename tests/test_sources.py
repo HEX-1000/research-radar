@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import httpx
 import pytest
+from conftest import FORGEJO
 
-from research_radar.http import SourceError
+from research_radar.http import Http, SourceError
 from research_radar.sources import arxiv, forgejo, github, huggingface
 from research_radar.sources.base import FetchContext, settle
 
@@ -77,6 +79,60 @@ def test_huggingface_shape_change_is_reported():
 def test_forgejo_keeps_only_recent_non_forks(make_cfg, http_factory):
     items = forgejo.fetch(ctx_for(make_cfg(), http_factory()))
     assert [i.title for i in items] == ["codeberg.org/carol/stac-tools"]
+
+
+def _forgejo_run(cfg, status: int, text: str = "") -> tuple[list[httpx.Request], Exception | None, list]:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(status, text=text) if status != 200 else httpx.Response(200, json=FORGEJO)
+
+    http = Http(transport=httpx.MockTransport(handler), sleep=lambda seconds: None)
+    try:
+        return requests, None, forgejo.fetch(ctx_for(cfg, http))
+    except SourceError as exc:
+        return requests, exc, []
+    finally:
+        http.close()
+
+
+def test_forgejo_stops_asking_a_server_that_refuses_searches(make_cfg, monkeypatch):
+    monkeypatch.delenv("RADAR_CODEBERG_TOKEN", raising=False)
+    refusal = "Search and filtering is seeing a high influx of requests, your search request will not be processed."
+    cfg = make_cfg()
+    terms = [t for topic in cfg.topics for t in (topic.source_option("forgejo", "queries") or topic.keywords[:2])]
+    assert len(terms) > 1
+    requests, error, _ = _forgejo_run(cfg, 429, refusal)
+    assert {r.url.params["q"] for r in requests} == {terms[0]}  # the first query and its retries, nothing after it
+    assert "refuses searches" in str(error) and "high influx of requests" in str(error)
+    assert "put one in the environment variable RADAR_CODEBERG_TOKEN" in str(error)
+    assert all("authorization" not in r.headers for r in requests)
+
+
+def test_forgejo_sends_the_token_named_for_the_server(make_cfg, monkeypatch):
+    monkeypatch.setenv("RADAR_CODEBERG_TOKEN", "tok-123")
+    requests, error, items = _forgejo_run(make_cfg(), 200)
+    assert error is None and [i.title for i in items] == ["codeberg.org/carol/stac-tools"]
+    assert requests and all(r.headers["authorization"] == "token tok-123" for r in requests)
+    assert {r.url.host for r in requests} == {"codeberg.org"}
+
+
+def test_forgejo_names_a_refused_token_and_stops(make_cfg, monkeypatch):
+    monkeypatch.setenv("RADAR_CODEBERG_TOKEN", "expired")
+    requests, error, _ = _forgejo_run(make_cfg(), 401, "token is invalid")
+    assert len(requests) == 1
+    assert "did not accept the access token in RADAR_CODEBERG_TOKEN" in str(error) and "expired" not in str(error)
+
+
+def test_forgejo_token_settings(make_cfg, monkeypatch):
+    monkeypatch.setenv("MY_GITEA", "g")
+    cfg = make_cfg()
+    assert cfg.forgejo_token("git.example.org") == ("", None)  # no variable named for that server
+    cfg.sources["forgejo"]["token_env"] = {"git.example.org": "MY_GITEA"}
+    assert cfg.forgejo_token("git.example.org") == ("MY_GITEA", "g")
+    cfg.sources["forgejo"]["token_env"] = "MY_GITEA"  # one variable for every server
+    assert cfg.forgejo_token("codeberg.org") == ("MY_GITEA", "g")
 
 
 def test_settle_fails_only_when_nothing_worked(make_cfg, http_factory):

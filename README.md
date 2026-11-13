@@ -65,6 +65,8 @@ Open Research Radar from the desktop icon, or run `radar`.
 
 The first thing to do is to describe your own interests. `radar init` copied an example `interests.yaml` with two topics, "Local-first AI tools" and "Geospatial machine learning". While those examples are unchanged, the interface says so, does not start a scan by itself, and `e` opens the file in an editor. Replace the topics with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. Save the file and press `s`: the interface reads the file again before every scan, so it can stay open while you edit. The file documents every setting.
 
+If a later edit breaks the file (one wrong indent is enough), scans go on with the last copy that could be read, which is kept in `state/interests.last-good.yaml`. Until you fix the file, the digest page, the email, the Telegram message, the interface and `radar doctor` say which line to look at.
+
 A topic you add or edit later does not start empty. The next scan looks back `first_run_days` for that topic alone, once, and says so ("Looked back for: ..."). Items you have already been shown are not shown again.
 
 The top bar has a dot next to "ollama". Green means a scan can use both models. Amber means a model is missing and red means Ollama is not reachable; a notice then says what to do. Without Ollama a scan still works, but it matches by keywords only, so the interface does not start one by itself in that case.
@@ -151,7 +153,15 @@ Without the Task Scheduler, `radar scan` does the same work from the command lin
 | `arxiv` | the official Atom API, one query per topic | Requests are spaced about 3 seconds apart, as arXiv asks. |
 | `huggingface-papers` | the daily papers list for each day in the window | |
 | `huggingface-models` | currently trending models | Matches on tags only, so it is the noisiest source. |
-| `forgejo` | repository search on Codeberg or any Gitea or Forgejo server | Add servers under `sources.forgejo.instances`. |
+| `forgejo` | repository search on Codeberg or any Gitea or Forgejo server | Since November 2026 Codeberg refuses searches without an access token (HTTP 429), so it needs a free account and a token, see below. Add servers under `sources.forgejo.instances`. |
+
+**A Codeberg token.** Create a free account on [codeberg.org](https://codeberg.org), open Settings, Applications, and generate a token with access to public repositories only and the permission "repository: Read". Put it in the environment variable `RADAR_CODEBERG_TOKEN`. On Windows, in PowerShell:
+
+```
+[Environment]::SetEnvironmentVariable("RADAR_CODEBERG_TOKEN", "your token", "User")
+```
+
+`"User"` stays as written: it means your Windows account. Open Research Radar again afterwards, so it sees the variable. `radar doctor` says whether the token is used. The token is sent only to Codeberg. For another Forgejo or Gitea server, name its variable under `sources.forgejo.token_env`, for example `git.example.org: MY_GITEA_TOKEN`. Without a token the scan asks Codeberg once, skips it when it refuses, and collects the gap once a token is set, up to `max_catchup_days`.
 
 Each source is a small module in `src/research_radar/sources/`. A source takes the date window and your topics and returns a list of items, so adding one is a short file. Pull requests are welcome.
 

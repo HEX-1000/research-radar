@@ -284,6 +284,8 @@ class RadarApp(App):
         self.refresh_ollama_dot()
         for text, severity in self.startup_notes:
             self.notify(text, severity=severity, timeout=20 if "\n" in text else 10)
+        if self.cfg.problem:
+            self.notify(self.cfg.problem, severity="error", timeout=30)
         if self.example_topics:
             self.notify(EXAMPLE_NOTICE, severity="warning", timeout=20)
         # The catch-up scan waits for the Ollama check: without Ollama it would spend today's
@@ -468,6 +470,8 @@ class RadarApp(App):
             self.notify(f"interests.yaml has a problem, so nothing was scanned. {exc}", severity="error", timeout=15)
             self.set_status("Fix interests.yaml, save it, then press s.")
             return False
+        if self.cfg.problem:
+            self.notify(self.cfg.problem, severity="error", timeout=30)
         self.example_topics = uses_example_topics(self.cfg)
         return True
 

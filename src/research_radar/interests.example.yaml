@@ -65,6 +65,8 @@ sources:
   forgejo:             # Codeberg and any Gitea or Forgejo server share one API
     enabled: true
     instances: [codeberg.org]
+    token_env:         # Codeberg answers searches only with an access token, see the README
+      codeberg.org: RADAR_CODEBERG_TOKEN
 
 topics:
   - name: Local-first AI tools

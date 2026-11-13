@@ -5,6 +5,12 @@ between your old version and the new one. Keep each entry to one short line a us
 understand. The version number lives in `src/research_radar/__init__.py`; raising it is
 what makes an update reach everyone.
 
+## 0.3.1
+
+- Codeberg now refuses searches without an access token. Put one in `RADAR_CODEBERG_TOKEN` (see the README) and Codeberg works again.
+- When Codeberg refuses, the scan asks once instead of for every topic, and the note says what the server answered.
+- A broken `interests.yaml` no longer stops the daily scan: it uses the last working copy, and the digest, the messages and `radar doctor` name the line to fix.
+
 ## 0.3.0
 
 - A topic you add or edit is searched back `first_run_days` once, so it does not start empty.

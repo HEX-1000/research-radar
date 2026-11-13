@@ -4,7 +4,15 @@ import httpx
 import pytest
 import yaml
 
-from research_radar.config import ConfigError, example_text, init_home, load_config, parse_config, resolve_home
+from research_radar.config import (
+    ConfigError,
+    example_text,
+    init_home,
+    last_good_path,
+    load_config,
+    parse_config,
+    resolve_home,
+)
 from research_radar.http import Http, SourceError
 
 
@@ -42,6 +50,40 @@ def test_bad_config_gives_clear_errors(tmp_path, data, message):
         parse_config(data, tmp_path)
 
 
+def test_a_broken_interests_file_falls_back_to_the_last_working_copy(tmp_path):
+    home = tmp_path / "home"
+    path = init_home(home)
+    good = load_config(home)
+    assert good.problem == ""
+    assert last_good_path(home).read_text(encoding="utf-8") == path.read_text(encoding="utf-8")
+
+    # The edit that stopped a real daily scan: a new topic without its "- " and with one space of indent.
+    lines = path.read_text(encoding="utf-8").splitlines() + ["", " name: New topic", "    description: >", "      text"]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    cfg = load_config(home)
+    assert [t.name for t in cfg.topics] == [t.name for t in good.topics]
+    broken_line = lines.index(" name: New topic") + 1
+    assert cfg.problem.startswith(f"interests.yaml is not valid YAML at line {broken_line}, column 2: ")
+    assert "last working copy" in cfg.problem and str(home) not in cfg.problem
+    assert "New topic" not in last_good_path(home).read_text(encoding="utf-8")  # a broken file never replaces the copy
+
+
+def test_a_file_that_parses_but_makes_no_sense_also_falls_back(tmp_path):
+    home = tmp_path / "home"
+    path = init_home(home)
+    load_config(home)
+    path.write_text("topics:\n  - name: A\n", encoding="utf-8")
+    assert load_config(home).problem.startswith("interests.yaml: topic 'A' has no description. ")
+
+
+def test_without_a_working_copy_a_broken_file_is_still_an_error(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "interests.yaml").write_text("topics:\n  - name: A\n description: x\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"is not valid YAML at line 3, column 2: .+ Check the indentation"):
+        load_config(home)
+
+
 def test_home_resolution_order(monkeypatch, tmp_path):
     monkeypatch.setenv("RADAR_HOME", str(tmp_path / "env"))
     assert resolve_home(str(tmp_path / "arg")) == tmp_path / "arg"
@@ -69,6 +111,25 @@ def test_http_gives_up_with_source_error():
     http = Http(transport=httpx.MockTransport(lambda r: httpx.Response(503)), sleep=lambda s: None)
     with pytest.raises(SourceError, match="503"):
         http.get("https://example.org/x")
+
+
+def test_http_error_shows_what_the_server_said_but_not_html():
+    def handler(request):
+        if request.url.path == "/text":
+            return httpx.Response(429, text="Too busy,\n  try again later.")
+        if request.url.path == "/json":
+            return httpx.Response(404, json={"message": "not here"})
+        return httpx.Response(500, html="<html><body>error page</body></html>")
+
+    http = Http(transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    with pytest.raises(SourceError) as info:
+        http.get("https://example.org/text")
+    assert str(info.value) == "example.org: HTTP 429 (Too busy, try again later.)" and info.value.status == 429
+    with pytest.raises(SourceError, match=r"HTTP 404 \(not here\)$"):
+        http.get("https://example.org/json")
+    with pytest.raises(SourceError) as info:
+        http.get("https://example.org/html")
+    assert str(info.value) == "example.org: HTTP 500"
 
 
 def test_http_spaces_requests_per_bucket():

@@ -6,6 +6,7 @@ import copy
 import os
 import shutil
 from dataclasses import dataclass, field
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,14 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
     "arxiv": {"enabled": True, "max_results": 100},
     "huggingface-papers": {"enabled": True},
     "huggingface-models": {"enabled": True, "limit": 25},
-    "forgejo": {"enabled": True, "instances": ["codeberg.org"], "per_query": 10},
+    "forgejo": {
+        "enabled": True,
+        "instances": ["codeberg.org"],
+        "per_query": 10,
+        # Per server, the environment variable that holds an access token. Since November 2026
+        # Codeberg refuses repository searches without one (HTTP 429).
+        "token_env": {"codeberg.org": "RADAR_CODEBERG_TOKEN"},
+    },
 }
 
 SOURCE_KEYS = tuple(DEFAULT_SOURCES)
@@ -94,6 +102,9 @@ class Config:
     exclude: list[str]
     topics: list[Topic]
     delivery: dict[str, Any] = field(default_factory=lambda: copy.deepcopy(DEFAULT_DELIVERY))
+    # Set when interests.yaml could not be read and the last working copy was used instead.
+    # The digest, the messages, the interface and `radar doctor` show it until the file is fixed.
+    problem: str = ""
 
     @property
     def digests_dir(self) -> Path:
@@ -117,6 +128,14 @@ class Config:
     def github_token(self) -> str | None:
         env = str(self.settings.get("github_token_env") or "")
         return os.environ.get(env) or None if env else None
+
+    def forgejo_token(self, instance: str) -> tuple[str, str | None]:
+        """The environment variable named for a Forgejo or Gitea server, and the token in it.
+
+        `sources.forgejo.token_env` maps server names to variable names; a plain string applies to every server."""
+        setting = self.sources.get("forgejo", {}).get("token_env") or {}
+        env = str((setting.get(instance) if isinstance(setting, dict) else setting) or "")
+        return env, (os.environ.get(env) or None) if env else None
 
 
 def resolve_home(explicit: str | os.PathLike[str] | None = None) -> Path:
@@ -247,15 +266,60 @@ def _parse_delivery(raw: Any) -> dict[str, Any]:
     return delivery
 
 
+LAST_GOOD = "interests.last-good.yaml"  # in the state folder
+
+
+def last_good_path(home: Path) -> Path:
+    return home / "state" / LAST_GOOD
+
+
+def _yaml_error(path: Path, exc: yaml.YAMLError) -> str:
+    mark = getattr(exc, "problem_mark", None)
+    problem = getattr(exc, "problem", None)
+    if mark is None or not problem:
+        return f"{path} is not valid YAML: {exc}"
+    return (
+        f"{path} is not valid YAML at line {mark.line + 1}, column {mark.column + 1}: {problem}. "
+        "Check the indentation of that line and the line before it"
+    )
+
+
+def _parse_text(text: str, path: Path, home: Path) -> Config:
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(_yaml_error(path, exc)) from exc
+    return parse_config(data or {}, home)
+
+
 def load_config(home: Path) -> Config:
+    """Read interests.yaml. Each good read is copied to the state folder; when the file is broken,
+    that copy is used, with `problem` set, so one typo does not stop the daily scan."""
     path = home / "interests.yaml"
     if not path.exists():
         raise ConfigError(f"no interests file at {path}. Run `radar init` first.")
+    text = path.read_text(encoding="utf-8")
+    backup = last_good_path(home)
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"{path} is not valid YAML: {exc}") from exc
-    return parse_config(data or {}, home)
+        cfg = _parse_text(text, path, home)
+    except ConfigError as exc:
+        try:
+            cfg = _parse_text(backup.read_text(encoding="utf-8"), backup, home)
+            saved = datetime.fromtimestamp(backup.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except (OSError, ConfigError):
+            raise exc from None
+        detail = str(exc).replace(str(path), "interests.yaml")
+        if not detail.startswith("interests.yaml"):
+            detail = f"interests.yaml: {detail}"
+        cfg.problem = f"{detail}. Until the file is fixed, Research Radar uses the last working copy, saved {saved}."
+        return cfg
+    try:
+        if not backup.exists() or backup.read_text(encoding="utf-8") != text:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            backup.write_text(text, encoding="utf-8")
+    except OSError:
+        pass  # the copy is a safety net; failing to write it must not stop anything
+    return cfg
 
 
 def copy_example_to(path: Path) -> None:
