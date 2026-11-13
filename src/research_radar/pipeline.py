@@ -19,7 +19,8 @@ from .models import Item, Report, SkippedSource
 from .notes import write_note
 from .ranker import Scored, rank, select
 from .sources import SOURCES, FetchContext
-from .sources.github import check_repos, fetch_readme
+from .sources.github import HOLD_DAYS, check_repos, fetch_readme, fetch_repo, parse_repo, thin_reason
+from .sources.github import GONE as GITHUB_GONE
 from .store import Store
 from .summarize import fallback_note, summarize
 
@@ -180,6 +181,16 @@ def _scan(
 
     fresh = [item for url, item in fetched.items() if url not in seen]
 
+    # Repositories held back a week ago are asked about again; one that is not thin joins the
+    # candidates of this scan.
+    trust_on = bool(cfg.settings.get("trust_check", True))
+    followers: dict[str, int | None] = {}
+    cleared: dict[str, str] = {}  # url of a rechecked repository: the held date it had
+    if cfg.source_enabled("github"):
+        for item, held_on in _recheck_held(cfg, http, seen, local_date, trust_on, followers, result, progress):
+            fresh.append(item)
+            cleared[item.url] = held_on
+
     # 2. Rank --------------------------------------------------------------------
     llm_ready = use_llm and ollama.ping()
     likes, dislikes = store.vote_vectors()
@@ -221,13 +232,38 @@ def _scan(
     min_score = float(cfg.settings["min_score"])
     if result.ranking == "keywords":
         min_score = min(min_score, 0.5)  # one keyword hit is the lowest score in this mode
+    def hold(entry: Scored) -> str | None:
+        item = entry.item
+        if not trust_on or item.source != "github" or item.url in cleared:
+            return None
+        meta = item.meta
+        return thin_reason(http, meta.get("size_kb"), meta.get("stars"), meta.get("owner"), followers)
+
     chosen = select(
         scored,
         min_score=min_score,
         max_items=int(cfg.settings["max_items"]),
         max_per_topic=int(cfg.settings["max_per_topic"]),
+        hold=hold,
     )
     result.explain = scored[:30]
+    for entry in scored:
+        if entry.held:
+            item = entry.item
+            seen[item.url] = {
+                "date": local_date,
+                "title": item.title,
+                "source": item.source,
+                "full_name": item.meta.get("full_name"),
+                "stars": item.meta.get("stars"),
+                "held": local_date,
+                "held_reason": entry.held,
+            }
+            result.warnings.append(f"Held back for a week: {item.title} ({entry.held}).")
+    # A rechecked repository that was not chosen leaves the list; the choice was made like any other.
+    for url in cleared:
+        if url in seen and seen[url].get("held"):
+            del seen[url]
 
     # 3. Describe the chosen items ------------------------------------------------------
     language = str(cfg.settings["summary_language"])
@@ -237,7 +273,8 @@ def _scan(
         progress(f"Writing note {number}/{len(chosen)}: {item.title}")
         source_text = item.text
         if item.source == "github" and item.meta.get("full_name"):
-            source_text = fetch_readme(http, item.meta["full_name"]) or item.text
+            readme = fetch_readme(http, item.meta["full_name"])
+            source_text = f"{item.text}\n\n{readme}".strip() if readme else item.text
         if llm_ready:
             what, why, verdict = summarize(ollama, item, entry.topic, source_text, language)
         else:
@@ -319,6 +356,8 @@ def _add_rising(
         and meta.get("full_name")
         and isinstance(meta.get("stars"), int)
         and not meta.get("gone")
+        and not meta.get("held")
+        and not meta.get("dropped")
         and meta.get("date", "") >= horizon
         and meta.get("date") != local_date
     }
@@ -357,6 +396,66 @@ def _add_rising(
                     rising=True,
                 )
             )
+
+
+def _recheck_held(
+    cfg: Config,
+    http: Http,
+    seen: dict,
+    local_date: str,
+    trust_on: bool,
+    followers: dict[str, int | None],
+    result: RunResult,
+    progress: Progress,
+) -> list[tuple[Item, str]]:
+    """Ask GitHub again about repositories held for HOLD_DAYS. Removed ones are marked gone, ones
+    still thin are dropped for good, and the rest come back as candidates with the date they were held."""
+    today = date_type.fromisoformat(local_date)
+    due: list[str] = []
+    for url, meta in seen.items():
+        held = meta.get("held")
+        if not held or not meta.get("full_name"):
+            continue
+        try:
+            if date_type.fromisoformat(held) + timedelta(days=HOLD_DAYS) <= today:
+                due.append(url)
+        except ValueError:
+            due.append(url)  # an unreadable date must not hold a repository forever
+    if not due:
+        return []
+    progress("Checking repositories held back earlier")
+    back: list[tuple[Item, str]] = []
+    for url in due:
+        meta = seen[url]
+        name = meta["full_name"]
+        try:
+            raw = fetch_repo(http, name)
+        except SourceError as exc:
+            if exc.status in GITHUB_GONE:
+                meta.pop("held", None)
+                meta["gone"] = local_date
+                result.warnings.append(
+                    f"{name}, held back on {_day_month(meta.get('date', ''))}, has been removed from GitHub since."
+                )
+                continue
+            if exc.status == 403:
+                continue  # blocked for now; asked again at the next scan
+            break  # rate limit, network or server error: the rest wait for the next scan
+        item = parse_repo(raw) if raw else None
+        if item is None:
+            continue
+        item_meta = item.meta
+        reason = (
+            thin_reason(http, item_meta.get("size_kb"), item_meta.get("stars"), item_meta.get("owner"), followers)
+            if trust_on
+            else None
+        )
+        if reason is None:
+            back.append((item, meta["held"]))
+        else:
+            meta.pop("held", None)
+            meta["dropped"] = local_date
+    return back
 
 
 def _day_month(iso_date: str) -> str:

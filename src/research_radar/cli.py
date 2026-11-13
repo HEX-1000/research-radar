@@ -98,7 +98,7 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
         print()
         print("score  hits  chosen  topic / item")
         for entry in result.explain:
-            mark = "yes" if entry.selected else "no"
+            mark = "held" if entry.held else ("yes" if entry.selected else "no")
             print(f"{entry.score:5.2f}  {entry.keyword_hits:4d}  {mark:>6}  {entry.topic.name} / {entry.item.title[:70]}")
     return 0
 

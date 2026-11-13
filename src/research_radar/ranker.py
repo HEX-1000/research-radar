@@ -30,6 +30,7 @@ class Scored:
     adjust: float = 0.0
     vector: list[float] = field(default_factory=list)
     selected: bool = False
+    held: str = ""  # why the trust check kept it back, when it did
 
 
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
@@ -155,8 +156,18 @@ def rank(
     return scored, mode
 
 
-def select(scored: list[Scored], *, min_score: float, max_items: int, max_per_topic: int) -> list[Scored]:
-    """Take the best items above the bar, with a cap per topic and overall. No padding."""
+def select(
+    scored: list[Scored],
+    *,
+    min_score: float,
+    max_items: int,
+    max_per_topic: int,
+    hold: Callable[[Scored], str | None] | None = None,
+) -> list[Scored]:
+    """Take the best items above the bar, with a cap per topic and overall. No padding.
+
+    `hold` is asked about an entry only when it would be chosen. It returns a reason to keep the
+    entry back, or None. A held entry takes no place, so the next candidate does."""
     chosen: list[Scored] = []
     per_topic: dict[str, int] = {}
     for entry in scored:
@@ -166,6 +177,10 @@ def select(scored: list[Scored], *, min_score: float, max_items: int, max_per_to
             break
         count = per_topic.get(entry.topic.name, 0)
         if count >= max_per_topic:
+            continue
+        reason = hold(entry) if hold else None
+        if reason:
+            entry.held = reason
             continue
         per_topic[entry.topic.name] = count + 1
         entry.selected = True

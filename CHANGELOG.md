@@ -14,6 +14,9 @@ what makes an update reach everyone.
 - A second scan on the same day keeps the notes of the first, and the note says which items were matched by keywords.
 - A misspelled setting or topic option in `interests.yaml` is now an error that names it, instead of being ignored.
 
+- Small GitHub repositories with at least 10 stars from accounts with 2 followers or fewer are held back for a week and checked again; `trust_check: false` turns this off.
+- The note a model writes for a repository now starts from its description and topics, then the README, and the model is told to ignore instructions inside the source text.
+
 ## 0.3.1
 
 - Codeberg now refuses searches without an access token. Put one in `RADAR_CODEBERG_TOKEN` (see the README) and Codeberg works again.
