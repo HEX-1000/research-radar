@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
 import pytest
 
 from research_radar import pipeline, ranker
 from research_radar.candidates import CandidateStore
 from research_radar.config import Topic
 from research_radar.digest import MONTHS, Digest, render_text
+from research_radar.http import Http
 from research_radar.models import Item, Report
 from research_radar.notes import ranking_note, render_note
-from research_radar.pipeline import scan, window_start
+from research_radar.pipeline import OVERLAP_DAYS, scan, window_start
 from research_radar.sources.github import RepoCheck
 from research_radar.store import Store
 
@@ -279,3 +281,33 @@ def test_note_for_an_empty_topic_and_skipped_source():
     text = render_note("2026-10-27", [], ["Topic A"], [], [], "embeddings")
     assert "## Topic A\nNothing new today." in text
     assert "## Skipped sources\n- none" in text
+
+
+def test_arxiv_window_starts_five_days_before_the_last_run(make_cfg):
+    cfg = make_cfg(first_run_days=3, max_catchup_days=14)
+    last = (NOW - timedelta(days=2)).isoformat()
+    assert window_start(cfg, last, NOW, None, OVERLAP_DAYS["arxiv"]) == NOW - timedelta(days=7)
+    assert window_start(cfg, last, NOW, None, OVERLAP_DAYS.get("github", 0)) == NOW - timedelta(days=2)
+    old = (NOW - timedelta(days=90)).isoformat()
+    assert window_start(cfg, old, NOW, None, OVERLAP_DAYS["arxiv"]) == NOW - timedelta(days=14)  # still capped
+    assert window_start(cfg, None, NOW, None, OVERLAP_DAYS["arxiv"]) == NOW - timedelta(days=3)  # no overlap on a first run
+
+
+def test_a_paper_submitted_before_the_last_run_and_announced_after_it_is_found(make_cfg):
+    from conftest import make_handler
+
+    cfg = make_cfg()
+    Store(cfg.state_dir).save_last_runs({"arxiv": (NOW - timedelta(days=1)).isoformat()})
+    queries: list[str] = []
+    inner = make_handler()
+
+    def handler(request):
+        if request.url.host == "export.arxiv.org":
+            queries.append(request.url.params["search_query"])
+        return inner(request)
+
+    http = Http(transport=httpx.MockTransport(handler), sleep=lambda seconds: None)
+    run(cfg, http)
+    http.close()
+    since = (NOW - timedelta(days=6)).strftime("%Y%m%d%H%M")  # last run, minus 5 days
+    assert queries and all(f"submittedDate:[{since} TO " in q for q in queries)

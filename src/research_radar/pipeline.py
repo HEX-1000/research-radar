@@ -21,6 +21,7 @@ from .models import Item, Report, SkippedSource
 from .notes import write_note
 from .ranker import Ranking, Scored, rank, select
 from .sources import SOURCES, FetchContext
+from .sources.arxiv import NAME as ARXIV, OVERLAP_DAYS as ARXIV_OVERLAP_DAYS
 from .sources.github import HOLD_DAYS, check_repos, fetch_readme, fetch_repo, parse_repo, thin_reason
 from .sources.github import GONE as GITHUB_GONE
 from .store import Store
@@ -56,15 +57,22 @@ def _parse_iso(value: str | None) -> datetime | None:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
-def window_start(cfg: Config, last_run: str | None, now: datetime, days: int | None) -> datetime:
-    """Where a source's window begins: its last good run, capped by max_catchup_days."""
+# Days a source's window reaches back before its last good run.
+OVERLAP_DAYS = {ARXIV: ARXIV_OVERLAP_DAYS}
+
+
+def window_start(
+    cfg: Config, last_run: str | None, now: datetime, days: int | None, overlap_days: int = 0
+) -> datetime:
+    """Where a source's window begins: its last good run minus the source's overlap,
+    capped by max_catchup_days."""
     if days is not None:
         return now - timedelta(days=days)
     earliest = now - timedelta(days=int(cfg.settings["max_catchup_days"]))
     previous = _parse_iso(last_run)
     if previous is None:
         return now - timedelta(days=int(cfg.settings["first_run_days"]))
-    return max(previous, earliest)
+    return max(previous - timedelta(days=overlap_days), earliest)
 
 
 def topic_fingerprint(topic: Topic) -> str:
@@ -152,7 +160,7 @@ def _scan(
         if not cfg.source_enabled(name):
             continue
         progress(f"Reading {name}")
-        windows[name] = window_start(cfg, last_runs.get(name), now, days)
+        windows[name] = window_start(cfg, last_runs.get(name), now, days, OVERLAP_DAYS.get(name, 0))
         ctx = FetchContext(config=cfg, http=http, since=windows[name], until=now)
         try:
             for item in fetch(ctx):

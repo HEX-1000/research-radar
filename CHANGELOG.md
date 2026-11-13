@@ -21,6 +21,8 @@ what makes an update reach everyone.
 - Every item a scan receives is kept in `state/radar.db`, which replaces `seen.json` and `vectors.json`. The first scan moves them over and renames them to `*.migrated`. A version older than this one finds no `seen.json` and would report old items again.
 - An item fetched again is not scored or shown again. An edited topic, or a new embedding model, gets one fresh look at the items in the window.
 - The same paper from arXiv and from Hugging Face papers is one item.
+- arXiv is searched from 5 days before the last good run, because a paper is announced a few days after it is submitted; papers already seen are not shown again.
+- An arXiv search reads further pages (up to 5 pages of 100) until a page comes back short.
 
 ## 0.3.1
 

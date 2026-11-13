@@ -191,3 +191,58 @@ def test_settle_fails_only_when_nothing_worked(make_cfg, http_factory):
 def test_failed_source_raises(make_cfg, http_factory):
     with pytest.raises(SourceError):
         arxiv.fetch(ctx_for(make_cfg(), http_factory(fail={"export.arxiv.org"})))
+
+
+def _atom(count: int, offset: int = 0) -> str:
+    entries = "".join(
+        f"<entry><id>http://arxiv.org/abs/2610.{offset + n:05d}v1</id><published>2026-10-26T17:00:00Z</published>"
+        f"<title>Paper {offset + n}</title><summary>text</summary><category term=\"q-fin.CP\"/></entry>"
+        for n in range(count)
+    )
+    return f'<feed xmlns="http://www.w3.org/2005/Atom">{entries}</feed>'
+
+
+def _paged_http(pages: list[str], starts: list[int]) -> Http:
+    def handler(request: httpx.Request) -> httpx.Response:
+        start = int(request.url.params["start"])
+        starts.append(start)
+        index = start // 100
+        return httpx.Response(200, text=pages[index] if index < len(pages) else _atom(0))
+
+    return Http(transport=httpx.MockTransport(handler), sleep=lambda seconds: None)
+
+
+def test_arxiv_paging_stops_on_a_short_page(make_cfg):
+    starts: list[int] = []
+    http = _paged_http([_atom(100, 0), _atom(100, 100), _atom(30, 200)], starts)
+    ctx = ctx_for(make_cfg(), http)
+    items = arxiv.fetch(ctx)
+    http.close()
+    assert len(items) == 230
+    assert set(starts) == {0, 100, 200}  # the third page is short, so no query asks for a fourth
+    assert not ctx.warnings
+
+
+def test_arxiv_paging_stops_at_five_pages_and_warns(make_cfg):
+    starts: list[int] = []
+    http = _paged_http([_atom(100, 100 * n) for n in range(10)], starts)
+    ctx = ctx_for(make_cfg(), http)
+    items = arxiv.fetch(ctx)
+    http.close()
+    assert len(items) == 500
+    assert sorted(set(starts)) == [0, 100, 200, 300, 400]
+    assert any("5 page limit" in w for w in ctx.warnings)
+
+
+def test_arxiv_failed_later_page_keeps_earlier_pages_and_warns(make_cfg):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if int(request.url.params["start"]) >= 100:
+            return httpx.Response(503, text="down")
+        return httpx.Response(200, text=_atom(100))
+
+    http = Http(transport=httpx.MockTransport(handler), sleep=lambda seconds: None)
+    ctx = ctx_for(make_cfg(), http)
+    items = arxiv.fetch(ctx)
+    http.close()
+    assert len(items) == 100
+    assert any("arxiv:" in w for w in ctx.warnings)  # the window will not advance

@@ -17,6 +17,11 @@ from .base import FetchContext, clean_text, settle
 
 NAME = "arxiv"
 API = "https://export.arxiv.org/api/query"
+# A paper is searched by submission date but announced a few days later, so a
+# window that starts at the last run misses papers submitted before it. The
+# window starts this many days earlier; the competing rule drops the overlap.
+OVERLAP_DAYS = 5
+MAX_PAGES = 5
 NS = {"a": "http://www.w3.org/2005/Atom", "x": "http://arxiv.org/schemas/atom"}
 
 
@@ -82,22 +87,31 @@ def fetch(ctx: FetchContext) -> list[Item]:
         if query in done:
             continue
         done.add(query)
-        params = {
-            "search_query": query,
-            "sortBy": "submittedDate",
-            "sortOrder": "descending",
-            "start": 0,
-            "max_results": max_results,
-        }
-        try:
-            response = ctx.http.get(API, params=params, bucket="arxiv", min_interval=3.2)
-            parsed = parse_feed(response.text)
-            ok += 1
-        except SourceError as exc:
-            errors.append(f"topic '{topic.name}': {exc}")
+        parsed: list[Item] = []
+        failed = False
+        for page in range(MAX_PAGES):
+            params = {
+                "search_query": query,
+                "sortBy": "submittedDate",
+                "sortOrder": "descending",
+                "start": page * max_results,
+                "max_results": max_results,
+            }
+            try:
+                response = ctx.http.get(API, params=params, bucket="arxiv", min_interval=3.2)
+                batch = parse_feed(response.text)
+                ok += 1
+            except SourceError as exc:
+                errors.append(f"topic '{topic.name}': {exc}")
+                failed = True
+                break
+            parsed.extend(batch)
+            if len(batch) < max_results:
+                break
+            if page == MAX_PAGES - 1:
+                ctx.warn(f"arxiv: topic '{topic.name}' hit the {MAX_PAGES} page limit, older papers in the window were left out")
+        if failed and not parsed:
             continue
-        if len(parsed) >= max_results:
-            ctx.warn(f"arxiv: topic '{topic.name}' hit the {max_results} result cap, older papers in the window were left out")
         for item in parsed:
             items.setdefault(item.url, item)
     settle(ctx, NAME, ok, errors)
