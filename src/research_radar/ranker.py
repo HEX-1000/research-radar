@@ -25,6 +25,7 @@ class Scored:
     item: Item
     topic: Topic
     score: float
+    bar: float = 0.0  # the bar of its topic; set by rank
     similarity: float = 0.0
     keyword_hits: int = 0
     adjust: float = 0.0
@@ -32,6 +33,11 @@ class Scored:
     selected: bool = False
     held: str = ""  # why the trust check kept it back, when it did
     outcome: str = ""  # set by select: shown, held, below_bar, topic_full or day_full
+
+    @property
+    def margin(self) -> float:
+        """How far the score is above the bar of its topic (negative when below)."""
+        return self.score - self.bar
 
 
 @dataclass
@@ -127,8 +133,13 @@ def rank(
     feedback_weight: float = 0.2,
     competes: Callable[[Item, Topic], bool] | None = None,
     known: dict[str, list[float]] | None = None,
+    bars: dict[str, float] | None = None,
 ) -> Ranking:
     """Give every item its best topic and score, best first.
+
+    `bars` maps a topic name to its bar. An item goes to the topic where its score clears the bar
+    by the most; with equal bars (the default is 0 for every topic) that is the best score. The
+    result is sorted by that margin.
 
     `competes(item, topic)` says whether an item competes for a topic in this scan (default:
     always). An item that competes for no topic is left out and not embedded. `known` maps an
@@ -168,6 +179,7 @@ def rank(
         best: Scored | None = None
         measures: list[tuple[str, float, int]] = []
         for topic in mine:
+            bar = (bars or {}).get(topic.name, 0.0)
             hits = keyword_hits(item, topic)
             if embed is not None:
                 vector = item_vectors[item.key]
@@ -177,13 +189,13 @@ def rank(
                     continue
                 adjust = feedback_adjust(vector, likes or [], dislikes or [], feedback_weight)
                 score = sim + min(0.09, 0.03 * hits) + adjust
-                candidate = Scored(item, topic, score, sim, hits, adjust, vector)
+                candidate = Scored(item, topic, score, bar, sim, hits, adjust, vector)
             else:
                 if is_excluded(item, topic.exclude):
                     continue
                 score = min(0.95, 0.5 + 0.15 * hits) if hits else 0.0
-                candidate = Scored(item, topic, score, 0.0, hits, 0.0, [])
-            if best is None or candidate.score > best.score:
+                candidate = Scored(item, topic, score, bar, 0.0, hits, 0.0, [])
+            if best is None or candidate.margin > best.margin:
                 best = candidate
         if measures:
             ranking.measures[item.key] = measures
@@ -191,19 +203,20 @@ def rank(
             ranking.left_out[item.key] = "excluded"  # by the exclude list of every topic it competed for
         else:
             ranking.scored.append(best)
-    ranking.scored.sort(key=lambda s: s.score, reverse=True)
+    ranking.scored.sort(key=lambda s: s.margin, reverse=True)
     return ranking
 
 
 def select(
     scored: list[Scored],
     *,
-    min_score: float,
+    bars: dict[str, float],
     max_items: int,
-    max_per_topic: int,
+    caps: dict[str, int],
     hold: Callable[[Scored], str | None] | None = None,
 ) -> list[Scored]:
-    """Take the best items above the bar, with a cap per topic and overall. No padding.
+    """Take the items that clear the bar of their topic by the most, with a cap per topic and
+    overall. No padding. `bars` and `caps` are keyed by topic name.
 
     `hold` is asked about an entry only when it would be chosen. It returns a reason to keep the
     entry back, or None. A held entry takes no place, so the next candidate does. Every entry gets
@@ -211,14 +224,14 @@ def select(
     chosen: list[Scored] = []
     per_topic: dict[str, int] = {}
     for entry in scored:
-        if entry.score < min_score:
+        if entry.score < bars[entry.topic.name]:
             entry.outcome = "below_bar"
             continue
         if len(chosen) >= max_items:
             entry.outcome = "day_full"
             continue
         count = per_topic.get(entry.topic.name, 0)
-        if count >= max_per_topic:
+        if count >= caps[entry.topic.name]:
             entry.outcome = "topic_full"
             continue
         reason = hold(entry) if hold else None

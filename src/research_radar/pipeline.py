@@ -240,6 +240,17 @@ def _scan(
     competing = [i for i in fresh.values() if any(competes(i, t) for t in cfg.topics)]
     stored_vectors = candidates.vectors([i.key for i in competing], model) if llm_ready else {}
 
+    # Each topic's bar and cap: its own value, else the one under settings. A keyword preview
+    # lowers every bar to 0.5, because one keyword hit is the lowest score in that mode.
+    def topic_bars(keywords: bool) -> dict[str, float]:
+        bars = {t.name: float(cfg.settings["min_score"] if t.min_score is None else t.min_score) for t in cfg.topics}
+        return {name: min(bar, 0.5) for name, bar in bars.items()} if keywords else bars
+
+    caps = {
+        t.name: int(cfg.settings["max_per_topic"] if t.max_per_topic is None else t.max_per_topic) for t in cfg.topics
+    }
+    bars = topic_bars(not llm_ready)
+
     def rank_all(embed) -> Ranking:
         return rank(
             competing,
@@ -251,6 +262,7 @@ def _scan(
             feedback_weight=float(cfg.settings["feedback_weight"]),
             competes=competes,
             known=stored_vectors if embed else None,
+            bars=bars,
         )
 
     ranking = Ranking([], "embeddings" if llm_ready else "keywords")
@@ -261,6 +273,7 @@ def _scan(
         except OllamaError as exc:
             result.warnings.append(f"Embedding failed ({exc}); used keyword matching instead.")
             llm_ready = False
+            bars = topic_bars(True)
             ranking = rank_all(None)
     result.ranking = ranking.mode
     scored = ranking.scored
@@ -268,10 +281,6 @@ def _scan(
         result.warnings.append(
             f"Ollama is not reachable at {cfg.settings['ollama_url']}. Items were matched by keywords and described without a model."
         )
-
-    min_score = float(cfg.settings["min_score"])
-    if result.ranking == "keywords":
-        min_score = min(min_score, 0.5)  # one keyword hit is the lowest score in this mode
 
     def hold(entry: Scored) -> str | None:
         item = entry.item
@@ -282,9 +291,9 @@ def _scan(
 
     chosen = select(
         scored,
-        min_score=min_score,
+        bars=bars,
         max_items=int(cfg.settings["max_items"]),
-        max_per_topic=int(cfg.settings["max_per_topic"]),
+        caps=caps,
         hold=hold,
     )
     result.explain = scored[:30]

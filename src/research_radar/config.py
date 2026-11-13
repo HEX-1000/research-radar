@@ -49,7 +49,7 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
 }
 
 SOURCE_KEYS = tuple(DEFAULT_SOURCES)
-TOPIC_KEYS = ("name", "description", "keywords", "exclude") + SOURCE_KEYS
+TOPIC_KEYS = ("name", "description", "keywords", "exclude", "min_score", "max_per_topic") + SOURCE_KEYS
 
 # Secrets never go in this file. The settings name the environment variable that holds them.
 DEFAULT_DELIVERY: dict[str, Any] = {
@@ -85,6 +85,8 @@ class Topic:
     keywords: list[str] = field(default_factory=list)
     exclude: list[str] = field(default_factory=list)
     options: dict[str, dict[str, Any]] = field(default_factory=dict)  # per source
+    min_score: float | None = None  # this topic's bar; None means the value under settings
+    max_per_topic: int | None = None  # this topic's cap; None means the value under settings
 
     def source_option(self, source: str, key: str, default: Any = None) -> Any:
         return self.options.get(source, {}).get(key, default)
@@ -198,6 +200,22 @@ def _as_list(value: Any, where: str) -> list[str]:
     raise ConfigError(f"{where} must be a list of strings")
 
 
+def _topic_min_score(value: Any, name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        raise ConfigError(f"topic '{name}': min_score must be a number from 0 to 1, not {value!r}")
+    return float(value)
+
+
+def _topic_cap(value: Any, name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ConfigError(f"topic '{name}': max_per_topic must be a whole number, 0 or more, not {value!r}")
+    return value
+
+
 def _unknown(notices: list[str], what: str, keys: list[str], known: Any) -> None:
     for key in keys:
         notices.append(f"interests.yaml: unknown {what.format(key=key)} was ignored (known: {', '.join(known)})")
@@ -252,6 +270,8 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
                 keywords=_as_list(raw.get("keywords"), f"topic '{name}' keywords"),
                 exclude=_as_list(raw.get("exclude"), f"topic '{name}' exclude"),
                 options=options,
+                min_score=_topic_min_score(raw.get("min_score"), name),
+                max_per_topic=_topic_cap(raw.get("max_per_topic"), name),
             )
         )
 

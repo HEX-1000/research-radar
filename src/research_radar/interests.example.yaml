@@ -81,6 +81,8 @@ topics:
     # match the start of a word (retrieval also finds retrievals).
     keywords: [ollama, local llm, embeddings, retrieval, mcp, sqlite fts]
     exclude: [crypto trading bot]
+    # Optional, per topic: min_score and max_per_topic replace the values under settings for this
+    # topic only (max_per_topic: 0 hides it). Leave them out until `radar scan --explain` shows a need.
     github:
       queries: [local llm, mcp server, retrieval]
     arxiv:

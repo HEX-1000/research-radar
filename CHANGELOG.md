@@ -7,6 +7,7 @@ what makes an update reach everyone.
 
 ## Unreleased
 
+- A topic can set its own `min_score` and `max_per_topic` (`max_per_topic: 0` mutes it). An item goes to the topic whose bar it clears by the most, and `radar scan --explain` shows the bar next to each score.
 - The rising check now asks about every repository from the last `rising_days`; a deleted one no longer stops it and is named once in the notes.
 - A rising repository shows its license instead of "license not stated".
 - Keywords of four letters or fewer match whole words only ("stac" no longer matches "stack"); longer ones match at the start of a word.
