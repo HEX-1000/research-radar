@@ -97,6 +97,7 @@ def test_html_has_both_themes_and_a_readable_date():
 def test_rising_item_is_described_by_its_growth():
     rising = report(verdict="watch", rising=True, meta={"stars_before": 40, "stars_now": 300})
     text = render_text(Digest(date="2026-10-27", reports=[rising]))
+    assert "license" not in text  # saved before the license was read: say nothing rather than "not stated"
     assert "Rising: from 40 to 300 stars" in text
     assert "RISING" in render_html(Digest(date="2026-10-27", reports=[rising]))
 
@@ -454,7 +455,7 @@ def seed_home(tmp_path, channel_enabled=True):
     today = datetime.now().astimezone().date().isoformat()
     day = report(title="alice/tool", verdict="read")
     day.date = today
-    Store(home / "state").save_day(today, [day], [], [], "embeddings")
+    Store(home / "state").save_day(today, [day], [])
     return home, today
 
 

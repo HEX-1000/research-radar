@@ -51,6 +51,7 @@ class Report:
     meta: dict[str, Any] = field(default_factory=dict)
     rising: bool = False
     vote: int = 0  # +1, -1 or 0
+    ranking: str = ""  # how the scan chose it: embeddings or keywords; empty for rising items and older reports
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -48,6 +48,7 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
 }
 
 SOURCE_KEYS = tuple(DEFAULT_SOURCES)
+TOPIC_KEYS = ("name", "description", "keywords", "exclude") + SOURCE_KEYS
 
 # Secrets never go in this file. The settings name the environment variable that holds them.
 DEFAULT_DELIVERY: dict[str, Any] = {
@@ -193,7 +194,13 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
         raise ConfigError("interests.yaml must contain a mapping at the top level")
 
     settings = copy.deepcopy(DEFAULT_SETTINGS)
-    settings.update(data.get("settings") or {})
+    raw_settings = data.get("settings") or {}
+    if not isinstance(raw_settings, dict):
+        raise ConfigError("settings must be a mapping")
+    unknown = [k for k in raw_settings if k not in settings]
+    if unknown:
+        raise ConfigError(f"unknown setting '{unknown[0]}' (known: {', '.join(settings)})")
+    settings.update(raw_settings)
 
     sources = copy.deepcopy(DEFAULT_SOURCES)
     for name, opts in (data.get("sources") or {}).items():
@@ -220,6 +227,9 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
         if name in seen_names:
             raise ConfigError(f"topic name '{name}' is used twice")
         seen_names.add(name)
+        unknown = [k for k in raw if k not in TOPIC_KEYS]
+        if unknown:
+            raise ConfigError(f"unknown option '{unknown[0]}' in topic '{name}' (known: {', '.join(TOPIC_KEYS)})")
         options = {k: (raw[k] or {}) for k in SOURCE_KEYS if isinstance(raw.get(k), dict)}
         # Short names in the file: github, arxiv, forgejo. Hugging Face sources have
         # no per-topic options, they match by text.

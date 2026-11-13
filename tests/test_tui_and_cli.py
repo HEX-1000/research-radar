@@ -21,7 +21,7 @@ def seed_today(cfg):
         Report(date=today, topic="Geospatial machine learning", score=0.7, source="arxiv", kind="paper", title="A segmentation paper",
                url="https://arxiv.org/abs/1", what="Segments images.", why="Fits.", verdict="read", meta={"arxiv_id": "1"}),
     ]
-    store.save_day(today, reports, [], [], "embeddings")
+    store.save_day(today, reports, [])
     return today
 
 

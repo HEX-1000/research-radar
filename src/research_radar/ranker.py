@@ -9,7 +9,9 @@ closer), plus a small bonus per keyword found, plus a nudge from your earlier
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Callable, Sequence
 
 from .config import Topic
@@ -47,14 +49,50 @@ def _haystack(item: Item) -> str:
     return f"{item.title} {item.text}".lower()
 
 
+# Not next to a letter or digit. Hyphens, underscores, dots and spaces separate words in repository names.
+_START = r"(?<![^\W_])"
+_END = r"(?![^\W_])"
+
+
+@lru_cache(maxsize=1024)
+def keyword_pattern(keyword: str) -> re.Pattern[str]:
+    """Keywords of four letters or fewer match whole words ("stac" does not match "stack"),
+    with a plural s allowed. Longer ones match at the start of a word ("backtest" finds "backtesting")."""
+    word = re.escape(keyword.lower().strip())
+    if len(keyword.strip()) <= 4:
+        return re.compile(f"{_START}{word}s?{_END}")
+    return re.compile(f"{_START}{word}")
+
+
 def keyword_hits(item: Item, topic: Topic) -> int:
     hay = _haystack(item)
-    return sum(1 for kw in topic.keywords if kw.lower() in hay)
+    return sum(1 for kw in topic.keywords if kw.strip() and keyword_pattern(kw).search(hay))
 
 
 def is_excluded(item: Item, phrases: Sequence[str]) -> bool:
     hay = _haystack(item)
     return any(p.lower() in hay for p in phrases if p)
+
+
+# Wording of repositories that offer cracked or "activated" software, a common way to spread
+# malware; such repositories often buy stars to rank high in a search. Papers are not checked: an
+# abstract can say "full version" or "free download" for honest reasons. A bare "crack" is not
+# enough either, because crack detection, "crack-free" coatings and crack patching are real subjects.
+_LURE = re.compile(
+    _START
+    + r"(?:"
+    + r"crack(?:ed)?[-_ ]?(?:20\d\d|windows|win|mac|pc|downloads?|full|version|keys?|serial|activation)"
+    + r"|cracked|keygen|warez|nulled"
+    + r"|serial[-_ ]?keys?|license[-_ ]?keys?|activation[-_ ]?(?:keys?|codes?)|activators?|pre[-_ ]?activated"
+    + r"|free[-_ ]?downloads?|full[-_ ]?version|premium[-_ ]?unlocked|unlocked[-_ ]?premium"
+    + r")"
+    + _END
+)
+
+
+def is_lure(item: Item) -> bool:
+    """True for a repository or model whose name, description or topics offer cracked software."""
+    return item.kind != "paper" and _LURE.search(_haystack(item)) is not None
 
 
 def feedback_adjust(vector: Sequence[float], likes: list[list[float]], dislikes: list[list[float]], weight: float) -> float:
@@ -75,7 +113,7 @@ def rank(
     feedback_weight: float = 0.2,
 ) -> tuple[list[Scored], str]:
     """Return every item with its best topic and score, best first, and the mode used."""
-    candidates = [i for i in items if not is_excluded(i, global_exclude)]
+    candidates = [i for i in items if not is_excluded(i, global_exclude) and not is_lure(i)]
     if not candidates or not topics:
         return [], "embeddings" if embed else "keywords"
 

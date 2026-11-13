@@ -38,8 +38,50 @@ def test_github_readme_is_stripped(http_factory):
     assert text == "Tool A tool to run a local llm."
 
 
-def test_github_star_counts(http_factory):
-    assert github.star_counts(http_factory(repo_stars=321), ["a/b", "c/d"]) == {"a/b": 321, "c/d": 321}
+def test_github_repo_check_reads_stars_and_license(http_factory):
+    check = github.check_repos(http_factory(repo_stars=321), ["a/b", "c/d"])
+    assert check.current == {n: {"stars": 321, "license": "MIT", "language": "Python"} for n in ("a/b", "c/d")}
+    assert check.gone == []
+
+
+def _repo_http(answers: dict[str, httpx.Response], asked: list[str]) -> Http:
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = request.url.path.removeprefix("/repos/")
+        asked.append(name)
+        return answers.get(name) or httpx.Response(200, json={"stargazers_count": 7, "license": None})
+
+    return Http(transport=httpx.MockTransport(handler), sleep=lambda seconds: None)
+
+
+def test_github_repo_check_goes_on_past_deleted_and_blocked_repositories():
+    asked: list[str] = []
+    answers = {
+        "gone/one": httpx.Response(404, json={"message": "Not Found"}),
+        "blocked/two": httpx.Response(403, json={"message": "Repository access blocked"}),
+        "dmca/three": httpx.Response(451, json={"message": "Repository access blocked"}),
+    }
+    http = _repo_http(answers, asked)
+    check = github.check_repos(http, ["a/b", "gone/one", "blocked/two", "dmca/three", "c/d"])
+    http.close()
+    assert check.gone == ["gone/one", "dmca/three"]  # a blocked repository is asked again next time
+    assert sorted(check.current) == ["a/b", "c/d"]
+    assert check.current["a/b"] == {"stars": 7, "license": None, "language": None}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(503, text="down"),
+        httpx.Response(403, json={"message": "API rate limit exceeded"}, headers={"x-ratelimit-remaining": "0"}),
+    ],
+)
+def test_github_repo_check_stops_when_github_cannot_answer(answer):
+    asked: list[str] = []
+    http = _repo_http({"x/fails": answer}, asked)
+    check = github.check_repos(http, ["a/b", "x/fails", "c/d"])
+    http.close()
+    assert "c/d" not in asked  # the rest wait for the next scan
+    assert list(check.current) == ["a/b"] and check.gone == []
 
 
 def test_arxiv_query_uses_categories_terms_and_dates():

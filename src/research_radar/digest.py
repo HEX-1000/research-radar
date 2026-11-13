@@ -17,7 +17,7 @@ from datetime import date as date_type
 from urllib.parse import urlparse
 
 from .models import Report, SkippedSource, plain_title
-from .notes import meta_line
+from .notes import meta_line, ranking_note
 
 MONTHS = (
     "January", "February", "March", "April", "May", "June",
@@ -136,8 +136,9 @@ class Digest:
     def footer_notes(self) -> list[str]:
         notes = [f"Source {s.source} was skipped: {s.reason}" for s in self.skipped]
         notes.extend(condense_warnings(self.warnings))
-        if self.ranking == "keywords":
-            notes.append("Ranked by keyword matching because the embedding model was not available.")
+        mode = ranking_note(self.reports, self.ranking)
+        if mode:
+            notes.append(mode)
         return notes
 
 

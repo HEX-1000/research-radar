@@ -159,7 +159,9 @@ def make_handler(calls: list[str] | None = None, fail: set[str] | None = None, r
         if host == "api.github.com" and path.endswith("/readme"):
             return httpx.Response(200, text="# Tool\n![badge](x.png)\nA tool to run a local llm.")
         if host == "api.github.com" and path.startswith("/repos/"):
-            return httpx.Response(200, json={"stargazers_count": repo_stars})
+            return httpx.Response(
+                200, json={"stargazers_count": repo_stars, "license": {"spdx_id": "MIT"}, "language": "Python"}
+            )
         if host == "export.arxiv.org":
             return httpx.Response(200, text=ARXIV_ATOM)
         if host == "huggingface.co" and path == "/api/daily_papers":

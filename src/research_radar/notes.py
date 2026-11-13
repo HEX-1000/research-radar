@@ -19,7 +19,8 @@ def meta_line(report: Report) -> str:
         stars = _count(meta.get("stars"))
         if stars:
             parts.append(f"{stars} stars")
-        parts.append(f"license {meta['license']}" if meta.get("license") else "license not stated")
+        if "license" in meta:  # rising reports from older versions carry only the star counts
+            parts.append(f"license {meta['license']}" if meta["license"] else "license not stated")
         if meta.get("language"):
             parts.append(str(meta["language"]))
     elif report.kind == "paper":
@@ -53,6 +54,21 @@ def report_line(report: Report) -> str:
     return f"{line} ({meta})" if meta else line
 
 
+def ranking_note(reports: list[Report], day_ranking: str) -> str:
+    """Say so when items were ranked by keyword matching. Reports saved by older versions have no
+    mode of their own and take the day's."""
+    ranked = [r for r in reports if not r.rising]
+    by_keywords = sum(1 for r in ranked if (r.ranking or day_ranking) == "keywords")
+    if not by_keywords:
+        return ""
+    if by_keywords == len(ranked):
+        return "Ranked by keyword matching because the embedding model was not available."
+    return (
+        f"{by_keywords} of {len(ranked)} items were ranked by keyword matching "
+        "because the embedding model was not available."
+    )
+
+
 def render_note(
     date: str,
     reports: list[Report],
@@ -81,8 +97,9 @@ def render_note(
         lines.append("- none")
     lines.append("")
     notes = list(warnings)
-    if ranking == "keywords":
-        notes.insert(0, "Ranked by keyword matching because the embedding model was not available.")
+    mode = ranking_note(reports, ranking)
+    if mode:
+        notes.insert(0, mode)
     if notes:
         lines.append("## Notes")
         lines.extend(f"- {n}" for n in notes)

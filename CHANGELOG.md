@@ -5,6 +5,15 @@ between your old version and the new one. Keep each entry to one short line a us
 understand. The version number lives in `src/research_radar/__init__.py`; raising it is
 what makes an update reach everyone.
 
+## Unreleased
+
+- The rising check now asks about every repository from the last `rising_days`; a deleted one no longer stops it and is named once in the notes.
+- A rising repository shows its license instead of "license not stated".
+- Keywords of four letters or fewer match whole words only ("stac" no longer matches "stack"); longer ones match at the start of a word.
+- Repositories and models whose name, description or topics offer cracked software, keygens or license keys are dropped.
+- A second scan on the same day keeps the notes of the first, and the note says which items were matched by keywords.
+- A misspelled setting or topic option in `interests.yaml` is now an error that names it, instead of being ignored.
+
 ## 0.3.1
 
 - Codeberg now refuses searches without an access token. Put one in `RADAR_CODEBERG_TOKEN` (see the README) and Codeberg works again.

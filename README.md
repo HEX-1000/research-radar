@@ -149,7 +149,7 @@ Without the Task Scheduler, `radar scan` does the same work from the command lin
 
 | Source | What it reads | Notes |
 | --- | --- | --- |
-| `github` | new repositories from the search API, per query in your topics | Without a token the search API allows about 10 requests a minute, with one about 30. Set the environment variable `GITHUB_TOKEN` to a token with no scopes. GitHub has no official trending API, so "new" means created since the last scan. Repositories you were shown earlier that gained many stars are reported once as "rising". |
+| `github` | new repositories from the search API, per query in your topics | Without a token the search API allows about 10 requests a minute, with one about 30. Set the environment variable `GITHUB_TOKEN` to a token with no scopes. GitHub has no official trending API, so "new" means created since the last scan. Repositories you were shown earlier that gained many stars are reported once as "rising"; one that was deleted since is named once in the notes. Repositories whose name, description or topics offer cracked software, keygens or license keys are dropped. |
 | `arxiv` | the official Atom API, one query per topic | Requests are spaced about 3 seconds apart, as arXiv asks. |
 | `huggingface-papers` | the daily papers list for each day in the window | |
 | `huggingface-models` | currently trending models | Matches on tags only, so it is the noisiest source. |

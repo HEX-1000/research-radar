@@ -94,7 +94,7 @@ class Http:
                     detail = f" (GitHub says: {message})" if message else ""
                     raise SourceError(f"the search rate limit is used up, try again later or set GITHUB_TOKEN{detail}")
                 if response.status_code == 403:
-                    raise SourceError(f"{host}: HTTP 403" + (f" ({message})" if message else ""))
+                    raise SourceError(f"{host}: HTTP 403" + (f" ({message})" if message else ""), status=403)
             if response.status_code in (429, 502, 503, 504) and attempt < retries:
                 attempt += 1
                 self._sleep(_retry_after(response, default=3.0 * attempt))

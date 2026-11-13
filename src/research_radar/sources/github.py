@@ -9,6 +9,7 @@ refuses bursts with a secondary limit, so the spacing is wider than the minimum.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 
 from ..http import Http, SourceError
 from ..models import Item
@@ -28,6 +29,11 @@ def build_query(term: str, *, is_topic: bool, since_date: str, min_stars: int) -
     return f"{base} created:>={since_date} stars:>={min_stars} fork:false archived:false"
 
 
+def _license(raw: dict) -> str | None:
+    spdx = (raw.get("license") or {}).get("spdx_id")
+    return None if spdx in (None, "NOASSERTION") else spdx
+
+
 def parse_repo(raw: dict) -> Item | None:
     full_name = raw.get("full_name")
     url = raw.get("html_url")
@@ -38,10 +44,7 @@ def parse_repo(raw: dict) -> Item | None:
     text = description
     if topics:
         text = f"{description} Topics: {', '.join(topics)}".strip()
-    license_info = raw.get("license") or {}
-    spdx = license_info.get("spdx_id")
-    if spdx in (None, "NOASSERTION"):
-        spdx = None
+    spdx = _license(raw)
     return Item(
         source=NAME,
         kind="repo",
@@ -107,18 +110,35 @@ def fetch(ctx: FetchContext) -> list[Item]:
     return list(items.values())
 
 
-def star_counts(http: Http, full_names: list[str], limit: int = 15) -> dict[str, int]:
-    """Current star counts for repositories we reported earlier (for 'rising')."""
-    counts: dict[str, int] = {}
-    for full_name in full_names[:limit]:
+GONE = (404, 410, 451)  # deleted, or taken down for legal reasons
+
+
+@dataclass
+class RepoCheck:
+    """What GitHub says today about repositories reported earlier (for 'rising')."""
+
+    current: dict[str, dict] = field(default_factory=dict)  # full name: stars, license, language
+    gone: list[str] = field(default_factory=list)
+
+
+def check_repos(http: Http, full_names: list[str]) -> RepoCheck:
+    """Ask about every repository. A deleted one is noted and the check goes on; a rate limit, a
+    network failure or a server error ends it, and the rest are asked at the next scan."""
+    check = RepoCheck()
+    for full_name in full_names:
         try:
             data = http.get_json(f"{API}/repos/{full_name}", headers=HEADERS)
-        except SourceError:
+        except SourceError as exc:
+            if exc.status in GONE:
+                check.gone.append(full_name)
+                continue
+            if exc.status == 403:
+                continue  # this repository is blocked; the others may not be
             break
         stars = data.get("stargazers_count") if isinstance(data, dict) else None
         if isinstance(stars, int):
-            counts[full_name] = stars
-    return counts
+            check.current[full_name] = {"stars": stars, "license": _license(data), "language": data.get("language")}
+    return check
 
 
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")

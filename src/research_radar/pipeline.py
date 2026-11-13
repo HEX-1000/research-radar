@@ -5,19 +5,21 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
+from datetime import date as date_type
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
 from .config import Config, Topic
 from .deliver import DeliveryResult, deliver_pending, write_digest_file
+from .digest import MONTHS
 from .http import Http, SourceError
 from .llm import Ollama, OllamaError
 from .models import Item, Report, SkippedSource
 from .notes import write_note
 from .ranker import Scored, rank, select
 from .sources import SOURCES, FetchContext
-from .sources.github import fetch_readme, star_counts
+from .sources.github import check_repos, fetch_readme
 from .store import Store
 from .summarize import fallback_note, summarize
 
@@ -253,6 +255,7 @@ def _scan(
                 why=why,
                 verdict=verdict,
                 meta=item.meta,
+                ranking=result.ranking,
             )
         )
         seen[item.url] = {
@@ -272,9 +275,10 @@ def _scan(
     # 5. Save --------------------------------------------------------------------
     store.save_seen(seen)
     store.save_vectors(vectors)
-    result.all_reports = store.merge_day(
-        local_date, result.new_reports, result.skipped, result.warnings, result.ranking
+    day = store.merge_day(
+        local_date, result.new_reports, result.skipped, result.warnings, result.ranking, at=now.isoformat()
     )
+    result.all_reports = day["reports"]
     last_runs.update(advanced)
     store.save_last_runs(last_runs)
     covered = [] if (pending and (explicit_short or not looked_back)) else pending
@@ -282,9 +286,8 @@ def _scan(
     store.save_topic_marks(
         {t.name: current[t.name] for t in cfg.topics if marks is None or t not in pending or t.name in covered_names}
     )
-    result.note_path = write_note(
-        cfg, local_date, result.all_reports, result.skipped, result.warnings, result.ranking
-    )
+    # The note covers every scan of the day, so it takes the notes of earlier scans too.
+    result.note_path = write_note(cfg, local_date, day["reports"], day["skipped"], day["warnings"], day["ranking"])
 
     # 6. Digest file and messages. Nothing here can fail the scan. ------------------------
     try:
@@ -315,16 +318,24 @@ def _add_rising(
         if meta.get("source") == "github"
         and meta.get("full_name")
         and isinstance(meta.get("stars"), int)
+        and not meta.get("gone")
         and meta.get("date", "") >= horizon
         and meta.get("date") != local_date
     }
     if not tracked:
         return
     progress("Checking star counts of earlier items")
-    current = star_counts(http, list(tracked))
-    for full_name, stars_now in current.items():
+    check = check_repos(http, list(tracked))
+    for full_name in check.gone:
+        url = tracked[full_name]
+        seen[url]["gone"] = local_date
+        result.warnings.append(
+            f"{full_name}, shown on {_day_month(seen[url].get('date', ''))}, has been removed from GitHub since."
+        )
+    for full_name, repo in check.current.items():
         url = tracked[full_name]
         before = seen[url]["stars"]
+        stars_now = repo["stars"]
         if stars_now >= before * 1.5 and stars_now - before >= 50:
             seen[url]["stars"] = stars_now
             result.new_reports.append(
@@ -337,10 +348,24 @@ def _add_rising(
                     title=full_name,
                     url=url,
                     verdict="watch",
-                    meta={"stars_before": before, "stars_now": stars_now},
+                    meta={
+                        "stars_before": before,
+                        "stars_now": stars_now,
+                        "license": repo["license"],
+                        "language": repo["language"],
+                    },
                     rising=True,
                 )
             )
+
+
+def _day_month(iso_date: str) -> str:
+    """2026-11-04 as "4 November"."""
+    try:
+        day = date_type.fromisoformat(iso_date)
+    except ValueError:
+        return iso_date or "an earlier day"
+    return f"{day.day} {MONTHS[day.month - 1]}"
 
 
 def _topic_of(url: str, result: RunResult, cfg: Config) -> str:

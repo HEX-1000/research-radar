@@ -45,7 +45,8 @@ delivery:
     token_env: RADAR_TELEGRAM_TOKEN
     chat_id: ""              # `radar telegram-chat` shows it
 
-# Phrases that drop an item from every topic.
+# Phrases that drop an item from every topic. They match anywhere in the text.
+# Repositories that offer cracked software or keygens are dropped without being listed here.
 exclude:
   - telemetry enabled by default
   - cracked
@@ -75,6 +76,8 @@ topics:
       without cloud services. Local inference servers, embedding models,
       SQLite or other embedded search, context and token reduction for coding
       assistants, MCP servers.
+    # Keywords of four letters or fewer match whole words (mcp, not mcpx); longer ones
+    # match the start of a word (retrieval also finds retrievals).
     keywords: [ollama, local llm, embeddings, retrieval, mcp, sqlite fts]
     exclude: [crypto trading bot]
     github:
