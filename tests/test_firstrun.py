@@ -55,7 +55,7 @@ class ScanSpy:
 
     def __call__(self, cfg, progress=lambda m: None, **kwargs):
         self.configs.append(cfg)
-        return RunResult(date="2026-10-27", ranking=self.ranking)
+        return RunResult(date="2026-10-27", ranking=self.ranking, preview=self.ranking == "keywords")
 
 
 @pytest.fixture(autouse=True)
@@ -206,7 +206,7 @@ async def test_a_keyword_only_scan_says_so_in_the_status_line(tmp_path):
         await pilot.press("s")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert "keywords" in status(app)
+        assert "Keyword preview" in status(app) and "Nothing was saved or sent" in status(app)
 
 
 async def test_f1_and_question_mark_open_the_key_sheet_and_q_quits(tmp_path):
@@ -336,3 +336,31 @@ def test_doctor_local_names_the_missing_models(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out.startswith("FAIL  ollama")
     assert "ollama pull nomic-embed-text" in out and "ollama pull " + llm.SUGGESTED_CHAT_MODEL in out
+
+
+async def test_preview_items_are_marked_and_cannot_be_voted_on(tmp_path):
+    from research_radar.models import Report
+
+    today = __import__("datetime").datetime.now().astimezone().date().isoformat()
+    report = Report(
+        date=today, topic="Local AI", score=0.5, source="github", kind="repo", title="a/b",
+        url="https://github.com/a/b", what="w", why="y", verdict="watch", ranking="keywords",
+    )
+
+    def spy(cfg, progress=lambda m: None, **kwargs):
+        return RunResult(date=today, ranking="keywords", preview=True, new_reports=[report])
+
+    app = tui.RadarApp(config(tmp_path), scan_fn=spy, auto_scan=False, probe=down)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause(0.3)
+        assert "Press s for a keyword preview; nothing is saved or sent." in status(app)
+        await pilot.press("s")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        table = app.query_one("#list")
+        assert table.row_count == 1
+        await pilot.press("plus")
+        assert "Votes are off" in status(app)
+        assert app.store.load_day(today)["reports"] == []
+        await pilot.press("s")  # scanning again clears the preview first
+        await pilot.pause()

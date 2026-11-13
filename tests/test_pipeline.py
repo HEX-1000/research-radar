@@ -68,13 +68,13 @@ def test_failed_source_is_listed_and_keeps_its_window(make_cfg, http_factory):
     assert "- arxiv:" in result.note_path.read_text(encoding="utf-8")
 
 
-def test_without_ollama_it_falls_back_to_keywords(make_cfg, http_factory):
+def test_without_ollama_it_is_a_preview_that_shows_items(make_cfg, http_factory):
     result = run(make_cfg(), http_factory(), ollama=FakeOllama(up=False))
-    assert result.ranking == "keywords"
+    assert result.ranking == "keywords" and result.preview
     assert any("Ollama is not reachable" in w for w in result.warnings)
-    assert result.new_reports  # keyword hits still produce notes
+    assert result.new_reports  # keyword hits still produce plain notes
     assert all(r.verdict in ("watch", "read") for r in result.new_reports)
-    assert "keyword matching" in result.note_path.read_text(encoding="utf-8")
+    assert result.note_path is None
 
 
 def test_model_answers_are_used_but_verdict_is_checked(make_cfg, http_factory):
@@ -158,19 +158,15 @@ def test_rising_check_goes_on_past_a_deleted_repository(make_cfg, http_factory, 
 
 def test_two_scans_on_one_day_keep_both_sets_of_notes(make_cfg, http_factory):
     cfg = make_cfg()
-    first = run(cfg, http_factory(), ollama=FakeOllama(up=False))  # keyword mode, with a warning
-    second = run(cfg, http_factory(fail={"export.arxiv.org"}), now=NOW + timedelta(hours=1))
-    assert first.new_reports and first.ranking == "keywords" and second.ranking == "embeddings"
+    first = run(cfg, http_factory(fail={"export.arxiv.org"}))
+    second = run(cfg, http_factory(), now=NOW + timedelta(hours=1))
+    assert first.new_reports and first.ranking == "embeddings" and second.ranking == "embeddings"
     day = Store(cfg.state_dir).load_day(first.date)
-    assert [s["ranking"] for s in day["scans"]] == ["keywords", "embeddings"]
-    assert any("Ollama is not reachable" in w for w in day["warnings"])
+    assert [s["ranking"] for s in day["scans"]] == ["embeddings", "embeddings"]
     assert [s.source for s in day["skipped"]] == ["arxiv"]
-    ranking = {r.url: r.ranking for r in day["reports"]}
-    assert all(ranking[r.url] == "keywords" for r in first.new_reports)
-    assert all(ranking[r.url] == "embeddings" for r in second.new_reports)
+    assert {r.url for r in first.new_reports} <= {r.url for r in day["reports"]}
     note = second.note_path.read_text(encoding="utf-8")
-    assert "Ollama is not reachable" in note and "- arxiv:" in note
-    assert "by keyword matching" in note
+    assert "- arxiv:" in note
 
 
 def test_a_day_file_from_before_per_scan_notes_still_reads(make_cfg):

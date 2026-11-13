@@ -107,6 +107,14 @@ class Config:
     # Set when interests.yaml could not be read and the last working copy was used instead.
     # The digest, the messages, the interface and `radar doctor` show it until the file is fixed.
     problem: str = ""
+    # Unknown keys in interests.yaml. Each one was ignored; the scan runs and the notices are shown
+    # next to `problem`.
+    notices: list[str] = field(default_factory=list)
+
+    @property
+    def alert(self) -> str:
+        """Everything about interests.yaml the reader should look at, as one text."""
+        return " ".join([t for t in [self.problem, *self.notices] if t])
 
     @property
     def digests_dir(self) -> Path:
@@ -190,7 +198,13 @@ def _as_list(value: Any, where: str) -> list[str]:
     raise ConfigError(f"{where} must be a list of strings")
 
 
+def _unknown(notices: list[str], what: str, keys: list[str], known: Any) -> None:
+    for key in keys:
+        notices.append(f"interests.yaml: unknown {what.format(key=key)} was ignored (known: {', '.join(known)})")
+
+
 def parse_config(data: dict[str, Any], home: Path) -> Config:
+    notices: list[str] = []
     if not isinstance(data, dict):
         raise ConfigError("interests.yaml must contain a mapping at the top level")
 
@@ -198,15 +212,14 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
     raw_settings = data.get("settings") or {}
     if not isinstance(raw_settings, dict):
         raise ConfigError("settings must be a mapping")
-    unknown = [k for k in raw_settings if k not in settings]
-    if unknown:
-        raise ConfigError(f"unknown setting '{unknown[0]}' (known: {', '.join(settings)})")
-    settings.update(raw_settings)
+    _unknown(notices, "setting '{key}'", [k for k in raw_settings if k not in settings], settings)
+    settings.update({k: v for k, v in raw_settings.items() if k in settings})
 
     sources = copy.deepcopy(DEFAULT_SOURCES)
     for name, opts in (data.get("sources") or {}).items():
         if name not in sources:
-            raise ConfigError(f"unknown source '{name}' (known: {', '.join(SOURCE_KEYS)})")
+            _unknown(notices, "source '{key}'", [name], SOURCE_KEYS)
+            continue
         if isinstance(opts, bool):
             opts = {"enabled": opts}
         sources[name].update(opts or {})
@@ -228,9 +241,7 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
         if name in seen_names:
             raise ConfigError(f"topic name '{name}' is used twice")
         seen_names.add(name)
-        unknown = [k for k in raw if k not in TOPIC_KEYS]
-        if unknown:
-            raise ConfigError(f"unknown option '{unknown[0]}' in topic '{name}' (known: {', '.join(TOPIC_KEYS)})")
+        _unknown(notices, "option '{key}' in topic '" + name + "'", [k for k in raw if k not in TOPIC_KEYS], TOPIC_KEYS)
         options = {k: (raw[k] or {}) for k in SOURCE_KEYS if isinstance(raw.get(k), dict)}
         # Short names in the file: github, arxiv, forgejo. Hugging Face sources have
         # no per-topic options, they match by text.
@@ -250,11 +261,12 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
         sources=sources,
         exclude=_as_list(data.get("exclude"), "exclude"),
         topics=topics,
-        delivery=_parse_delivery(data.get("delivery")),
+        delivery=_parse_delivery(data.get("delivery"), notices),
+        notices=notices,
     )
 
 
-def _parse_delivery(raw: Any) -> dict[str, Any]:
+def _parse_delivery(raw: Any, notices: list[str]) -> dict[str, Any]:
     delivery = copy.deepcopy(DEFAULT_DELIVERY)
     if raw is None:
         return delivery
@@ -262,16 +274,15 @@ def _parse_delivery(raw: Any) -> dict[str, Any]:
         raise ConfigError("delivery must be a mapping")
     for key, value in raw.items():
         if key not in delivery:
-            raise ConfigError(f"unknown delivery option '{key}' (known: {', '.join(delivery)})")
+            _unknown(notices, "delivery option '{key}'", [key], delivery)
+            continue
         if isinstance(delivery[key], dict):
             if isinstance(value, bool):
                 value = {"enabled": value}
             if not isinstance(value, dict):
                 raise ConfigError(f"delivery.{key} must be a mapping")
-            unknown = [k for k in value if k not in delivery[key]]
-            if unknown:
-                raise ConfigError(f"unknown option '{unknown[0]}' in delivery.{key} (known: {', '.join(delivery[key])})")
-            delivery[key].update(value)
+            _unknown(notices, "option '{key}' in delivery." + key, [k for k in value if k not in delivery[key]], delivery[key])
+            delivery[key].update({k: v for k, v in value.items() if k in delivery[key]})
         else:
             delivery[key] = value
     return delivery

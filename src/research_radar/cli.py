@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan_p = sub.add_parser("scan", help="scan now without the interface (for schedulers)")
     scan_p.add_argument("--days", type=int, help="look back this many days instead of since the last scan")
-    scan_p.add_argument("--no-llm", action="store_true", help="skip Ollama: keyword matching and plain descriptions")
+    scan_p.add_argument("--no-llm", action="store_true", help="skip Ollama: a keyword preview that shows its items; nothing is saved or sent")
     scan_p.add_argument("--explain", action="store_true", help="print the scores of the top 30 candidates")
     scan_p.add_argument(
         "--scheduled",
@@ -76,14 +76,32 @@ def cmd_init(home_arg: str | None) -> int:
     return 0
 
 
-def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
+PREVIEW_END = (
+    "Keyword preview: nothing was saved or sent. Start Ollama and scan again; the next scan covers this window."
+)
+
+
+def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool, scheduled: bool = False) -> int:
+    from .lock import ScanLocked
     from .pipeline import scan
 
     if cfg.problem:
         print(f"warning: {cfg.problem}", flush=True)
-    result = scan(cfg, days=days, use_llm=not no_llm, progress=lambda m: print(m, flush=True))
+    for notice in cfg.notices:
+        print(f"notice: {notice}", flush=True)
+    try:
+        result = scan(cfg, days=days, use_llm=not no_llm, progress=lambda m: print(m, flush=True))
+    except ScanLocked as exc:
+        print(str(exc), flush=True)
+        return EXIT_SKIPPED
     print()
-    print(f"{len(result.new_reports)} new items ({result.fetched} fetched). Note: {result.note_path}")
+    if result.preview:
+        print(f"{len(result.new_reports)} items in a keyword preview ({result.fetched} fetched).")
+        for report in result.new_reports:
+            print(f"  {report.topic} / {report.title}")
+            print(f"    {report.url}")
+    else:
+        print(f"{len(result.new_reports)} new items ({result.fetched} fetched). Note: {result.note_path}")
     if result.backfilled:
         print("Looked back for new or edited topics: " + ", ".join(result.backfilled))
     for skipped in result.skipped:
@@ -100,6 +118,11 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool) -> int:
         for entry in result.explain:
             mark = "held" if entry.held else ("yes" if entry.selected else "no")
             print(f"{entry.score:5.2f}  {entry.keyword_hits:4d}  {mark:>6}  {entry.topic.name} / {entry.item.title[:70]}")
+    if result.preview:
+        print()
+        print(PREVIEW_END)
+        if scheduled:
+            return EXIT_SKIPPED
     return 0
 
 
@@ -149,7 +172,7 @@ def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, exp
                 print("No scan was run. The next scan collects what was missed.", flush=True)
                 code = EXIT_SKIPPED
             else:
-                code = cmd_scan(cfg, days, no_llm, explain)
+                code = cmd_scan(cfg, days, no_llm, explain, scheduled=True)
         except ConfigError as exc:
             print(f"error: {exc}")
             code = 2
@@ -259,6 +282,8 @@ def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
     if cfg.problem:
         print(f"FAIL  interests.yaml: {cfg.problem}")
         results.append(False)
+    for notice in cfg.notices:
+        print(f"WARN  {notice}")
     s = cfg.settings
     ollama = Ollama(s["ollama_url"], s["embed_model"], s["chat_model"])
 

@@ -104,7 +104,7 @@ def build_digest(cfg: Config, store: Store, date: str, reports: list[Report]) ->
         skipped=day["skipped"],
         warnings=day["warnings"],
         ranking=day["ranking"] or "embeddings",
-        alert=cfg.problem,
+        alert=cfg.alert,
     )
 
 
@@ -334,7 +334,7 @@ def deliver_pending(
             delivered = store.delivered().get(channel, [])
             empty_note = False
             # A broken interests.yaml is reported once a day per channel, even when nothing is new.
-            alert_due = bool(cfg.problem) and not only_date and _alert_key(today) not in delivered
+            alert_due = bool(cfg.alert) and not only_date and _alert_key(today) not in delivered
             if not reports and not alert_due:
                 if only_date or not cfg.delivery["send_when_empty"]:
                     result.note = "nothing new to send"

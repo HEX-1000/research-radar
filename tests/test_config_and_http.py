@@ -42,10 +42,7 @@ def test_load_config_needs_init(tmp_path):
         ({"topics": [{"name": "A"}]}, "no description"),
         ({"topics": [{"description": "x"}]}, "no name"),
         ({"topics": [{"name": "A", "description": "x"}, {"name": "A", "description": "y"}]}, "twice"),
-        ({"sources": {"nope": {}}, "topics": [{"name": "A", "description": "x"}]}, "unknown source"),
-        ({"settings": {"min_scor": 0.4}, "topics": [{"name": "A", "description": "x"}]}, "unknown setting 'min_scor'"),
         ({"settings": [1], "topics": [{"name": "A", "description": "x"}]}, "settings must be a mapping"),
-        ({"topics": [{"name": "A", "description": "x", "keyword": ["y"]}]}, "unknown option 'keyword' in topic 'A'"),
     ],
 )
 def test_bad_config_gives_clear_errors(tmp_path, data, message):

@@ -157,7 +157,7 @@ def log_of(home: Path) -> str:
 
 def test_scheduled_scan_writes_everything_to_the_log(scheduled_home, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_ollama_names", lambda cfg: ["nomic-embed-text:latest", "qwen3.5:9b"])
-    monkeypatch.setattr(cli, "cmd_scan", lambda cfg, days, no_llm, explain: print("3 new items") or 0)
+    monkeypatch.setattr(cli, "cmd_scan", lambda cfg, days, no_llm, explain, **k: print("3 new items") or 0)
     assert cli.main(["--home", str(scheduled_home), "scan", "--scheduled"]) == 0
     assert capsys.readouterr().out == ""  # pythonw has no console to print to
     text = log_of(scheduled_home)
@@ -168,7 +168,7 @@ def test_scheduled_scan_waits_for_ollama_then_gives_up_without_scanning(schedule
     scanned = []
     waits = []
     monkeypatch.setattr(cli, "_ollama_names", lambda cfg: None)
-    monkeypatch.setattr(cli, "cmd_scan", lambda *a: scanned.append(1) or 0)
+    monkeypatch.setattr(cli, "cmd_scan", lambda *a, **k: scanned.append(1) or 0)
     code = cli.cmd_scheduled_scan(str(scheduled_home), None, False, False, sleep=waits.append)
     assert code == schedule.EXIT_SKIPPED
     assert scanned == []
@@ -180,13 +180,13 @@ def test_scheduled_scan_waits_for_ollama_then_gives_up_without_scanning(schedule
 def test_scheduled_scan_goes_ahead_when_ollama_comes_up_late(scheduled_home, monkeypatch):
     answers = iter([None, ["nomic-embed-text:latest", "qwen3.5:9b"]])
     monkeypatch.setattr(cli, "_ollama_names", lambda cfg: next(answers))
-    monkeypatch.setattr(cli, "cmd_scan", lambda *a: 0)
+    monkeypatch.setattr(cli, "cmd_scan", lambda *a, **k: 0)
     assert cli.cmd_scheduled_scan(str(scheduled_home), None, False, False, sleep=lambda s: None) == 0
 
 
 def test_scheduled_scan_skips_when_the_embedding_model_is_missing(scheduled_home, monkeypatch):
     monkeypatch.setattr(cli, "_ollama_names", lambda cfg: ["qwen3.5:9b"])
-    monkeypatch.setattr(cli, "cmd_scan", lambda *a: pytest.fail("must not scan"))
+    monkeypatch.setattr(cli, "cmd_scan", lambda *a, **k: pytest.fail("must not scan"))
     waits = []
     assert cli.cmd_scheduled_scan(str(scheduled_home), None, False, False, sleep=waits.append) == schedule.EXIT_SKIPPED
     assert waits == []  # a missing model does not fix itself, so there is nothing to wait for
@@ -195,7 +195,7 @@ def test_scheduled_scan_skips_when_the_embedding_model_is_missing(scheduled_home
 
 def test_no_llm_scans_do_not_need_ollama(scheduled_home, monkeypatch):
     monkeypatch.setattr(cli, "_ollama_names", lambda cfg: pytest.fail("must not ask Ollama"))
-    monkeypatch.setattr(cli, "cmd_scan", lambda *a: 0)
+    monkeypatch.setattr(cli, "cmd_scan", lambda *a, **k: 0)
     assert cli.cmd_scheduled_scan(str(scheduled_home), None, True, False) == 0
 
 
@@ -208,7 +208,7 @@ def test_a_broken_interests_file_and_a_crash_end_up_in_the_log(scheduled_home, m
     init_home(scheduled_home)
     monkeypatch.setattr(cli, "_ollama_names", lambda cfg: ["nomic-embed-text:latest", "qwen3.5:9b"])
 
-    def boom(*a):
+    def boom(*a, **k):
         raise RuntimeError("source exploded")
 
     monkeypatch.setattr(cli, "cmd_scan", boom)

@@ -12,7 +12,9 @@ what makes an update reach everyone.
 - Keywords of four letters or fewer match whole words only ("stac" no longer matches "stack"); longer ones match at the start of a word.
 - Repositories and models whose name, description or topics offer cracked software, keygens or license keys are dropped.
 - A second scan on the same day keeps the notes of the first, and the note says which items were matched by keywords.
-- A misspelled setting or topic option in `interests.yaml` is now an error that names it, instead of being ignored.
+- A misspelled key in `interests.yaml` (setting, source, topic option or delivery option) is ignored and named in a notice, in the scan output, `radar doctor`, the digest and the interface; the scan still runs.
+- A scan that can only match by keywords (`--no-llm`, Ollama down, or the embedding failing) is now a preview: it shows its items and saves and sends nothing, so the next scan covers the same window. The scheduled scan exits as skipped.
+- Two scans cannot run at once: the second stops with "Another scan has been running since HH:MM." A lock older than 2 hours is taken over.
 
 - Small GitHub repositories with at least 10 stars from accounts with 2 followers or fewer are held back for a week and checked again; `trust_check: false` turns this off.
 - The note a model writes for a repository now starts from its description and topics, then the README, and the model is told to ignore instructions inside the source text.

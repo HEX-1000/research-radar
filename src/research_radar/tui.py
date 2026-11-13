@@ -23,6 +23,7 @@ from . import __version__
 from .config import Config, ConfigError, load_config, uses_example_topics
 from .deliver import describe, write_digest_file
 from .llm import Ollama, ollama_advice
+from .lock import ScanLocked
 from .models import Report, plain_title
 from .notes import meta_line
 from .pipeline import RunResult, scan
@@ -253,6 +254,8 @@ class RadarApp(App):
         self.status_text = ""
         self.example_topics = uses_example_topics(cfg)
         self._auto_scan_pending = False
+        self.preview: dict[str, Report] = {}  # a keyword preview, shown under preview_date and never saved
+        self.preview_date = ""
 
     # layout ---------------------------------------------------------------------
 
@@ -286,6 +289,8 @@ class RadarApp(App):
             self.notify(text, severity=severity, timeout=20 if "\n" in text else 10)
         if self.cfg.problem:
             self.notify(self.cfg.problem, severity="error", timeout=30)
+        for notice in self.cfg.notices:
+            self.notify(notice, severity="warning", timeout=20)
         if self.example_topics:
             self.notify(EXAMPLE_NOTICE, severity="warning", timeout=20)
         # The catch-up scan waits for the Ollama check: without Ollama it would spend today's
@@ -312,6 +317,8 @@ class RadarApp(App):
     def render_day(self) -> None:
         day = self.store.load_day(self.current_date)
         reports: list[Report] = sorted(day["reports"], key=lambda r: (r.topic, r.rising, -r.score))
+        if self.preview and self.current_date == self.preview_date:
+            reports += sorted(self.preview.values(), key=lambda r: (r.topic, -r.score))
         self.reports = {r.url: r for r in reports}
         self.sub_title = self.current_date
         count = len(reports)
@@ -323,6 +330,8 @@ class RadarApp(App):
         for report in reports:
             title = f"{plain_title(report.title)} (rising)" if report.rising else plain_title(report.title)
             verdict = Text("rising" if report.rising else report.verdict, style=VERDICT_STYLE.get(report.verdict, ""))
+            if report.url in self.preview and self.current_date == self.preview_date:
+                verdict = Text("preview", style=MUTED)
             table.add_row(VOTE_MARK[report.vote], verdict, short(report.topic, TOPIC_WIDTH), title, key=report.url)
         if reports:
             self.show_detail(reports[0])
@@ -345,6 +354,8 @@ class RadarApp(App):
         meta = meta_line(report)
         if meta:
             text.append(meta + "\n", style="dim")
+        if report.url in self.preview and self.current_date == self.preview_date:
+            text.append("\nKeyword preview: nothing was saved or sent, and votes are off for it.\n", style="bold")
         if report.vote:
             text.append("\nYour vote: " + ("+" if report.vote > 0 else "-"), style="bold")
         self.query_one("#detail", Static).update(text)
@@ -367,9 +378,9 @@ class RadarApp(App):
         if self.example_topics:
             return "Example topics in use: press e to write your own, save the file, then press s."
         if self.ollama_state == "down":
-            return "Ollama is not reachable (see the notice). Press s to scan with keyword matching."
+            return "Ollama is not reachable (see the notice). Press s for a keyword preview; nothing is saved or sent."
         if self.ollama_state == "no-embed":
-            return "The embedding model is missing (see the notice). Press s to scan with keyword matching."
+            return "The embedding model is missing (see the notice). Press s for a keyword preview; nothing is saved or sent."
         return "Press s to scan."
 
     # Ollama ---------------------------------------------------------------------
@@ -425,6 +436,7 @@ class RadarApp(App):
         new_index = self.day_index + step
         if 0 <= new_index < len(self.dates):
             self.day_index = new_index
+            self.preview = {}
             self.render_day()
 
     def action_open_link(self) -> None:
@@ -453,6 +465,9 @@ class RadarApp(App):
         report = self.selected()
         if report is None:
             return
+        if report.url in self.preview and self.current_date == self.preview_date:
+            self.set_status("Votes are off for a preview item: it was not saved.")
+            return
         self.store.set_vote(report.date, report.url, vote)
         table = self.query_one("#list", DataTable)
         row = table.cursor_row
@@ -472,6 +487,8 @@ class RadarApp(App):
             return False
         if self.cfg.problem:
             self.notify(self.cfg.problem, severity="error", timeout=30)
+        for notice in self.cfg.notices:
+            self.notify(notice, severity="warning", timeout=20)
         self.example_topics = uses_example_topics(self.cfg)
         return True
 
@@ -485,6 +502,7 @@ class RadarApp(App):
         if self.ollama_state != "ok":
             self._recheck_ollama()  # Ollama may have been started since the last check
         self.scanning = True
+        self.preview = {}
         self.set_status("Scanning...")
         self._scan_worker()
 
@@ -492,23 +510,28 @@ class RadarApp(App):
     def _scan_worker(self) -> None:
         try:
             result = self.scan_fn(self.cfg, progress=lambda m: self.call_from_thread(self.set_status, m))
+        except ScanLocked as exc:
+            self.call_from_thread(self._scan_failed, str(exc), False)
         except Exception as exc:  # the UI must survive any failure in a scan
             self.call_from_thread(self._scan_failed, f"{type(exc).__name__}: {exc}")
         else:
             self.call_from_thread(self._scan_done, result)
 
-    def _scan_failed(self, message: str) -> None:
+    def _scan_failed(self, message: str, failed: bool = True) -> None:
         self.scanning = False
-        self.set_status(f"Scan failed: {message}")
+        self.set_status(f"Scan failed: {message}" if failed else message)
         self._recheck_ollama()
 
     def _scan_done(self, result: RunResult) -> None:
         self.scanning = False
         self.refresh_dates(jump_to_latest=True)
+        if result.preview:
+            self.preview = {r.url: r for r in result.new_reports}
+            self.preview_date = result.date
         self.render_day()
         message = f"Scan done: {len(result.new_reports)} new items."
-        if result.ranking == "keywords":
-            message += " Matched by keywords, without Ollama."
+        if result.preview:
+            message = f"Keyword preview: {len(result.new_reports)} items. Nothing was saved or sent."
         if result.backfilled:
             message += " Looked back for: " + ", ".join(result.backfilled) + "."
         if result.skipped:

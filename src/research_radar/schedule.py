@@ -22,7 +22,7 @@ from typing import Callable
 TASK_NAME = "Research Radar daily scan"
 DESCRIPTION = "Runs a Research Radar scan and sends the digest. Added by `radar schedule on`."
 DEFAULT_TIME = "19:45"
-EXIT_SKIPPED = 3  # `radar scan --scheduled` found Ollama or the embedding model missing and did not scan
+EXIT_SKIPPED = 3  # `radar scan --scheduled` saved nothing: Ollama or the embedding model was missing, or another scan was running
 
 # Values reach PowerShell through the environment, never through the command text,
 # so a quote or a space in a path cannot change what the script does.
@@ -116,7 +116,7 @@ def result_text(code: int | None) -> str:
         0: "the last run finished",
         1: "the last run failed, see the log",
         2: "the last run stopped on an error in interests.yaml, see the log",
-        EXIT_SKIPPED: "the last run did not scan because Ollama or the embedding model was not ready",
+        EXIT_SKIPPED: "the last run saved nothing because Ollama or the embedding model was not ready, or another scan was running",
         0x41303: "it has not run yet",
         0x41301: "it is running now",
         0x41325: "the last run was skipped because another one was still running",

@@ -433,14 +433,15 @@ def test_delivery_defaults_and_shorthand():
     assert parse_config(data, __import__("pathlib").Path("x")).channel_enabled("telegram")
 
 
-def test_unknown_delivery_options_are_rejected():
+def test_unknown_delivery_options_are_notices():
     data = yaml.safe_load(example_text())
     data["delivery"] = {"emial": {"enabled": True}}
-    with pytest.raises(ConfigError, match="emial"):
-        parse_config(data, __import__("pathlib").Path("x"))
+    cfg = parse_config(data, __import__("pathlib").Path("x"))
+    assert any("unknown delivery option 'emial' was ignored" in n for n in cfg.notices)
     data["delivery"] = {"email": {"enabled": True, "smtp_hots": "x"}}
-    with pytest.raises(ConfigError, match="smtp_hots"):
-        parse_config(data, __import__("pathlib").Path("x"))
+    cfg = parse_config(data, __import__("pathlib").Path("x"))
+    assert any("'smtp_hots' in delivery.email was ignored" in n for n in cfg.notices)
+    assert cfg.channel_enabled("email") and "smtp_hots" not in cfg.delivery["email"]
 
 
 # command line and interface ---------------------------------------------------------------------

@@ -15,6 +15,7 @@ from .deliver import DeliveryResult, deliver_pending, write_digest_file
 from .digest import MONTHS
 from .http import Http, SourceError
 from .llm import Ollama, OllamaError
+from .lock import scan_lock
 from .models import Item, Report, SkippedSource
 from .notes import write_note
 from .ranker import Scored, rank, select
@@ -41,6 +42,7 @@ class RunResult:
     fetched: int = 0
     explain: list[Scored] = field(default_factory=list)
     backfilled: list[str] = field(default_factory=list)  # new or changed topics that got a look back
+    preview: bool = False  # a keyword ranking: the items are shown, nothing was saved or sent
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -97,7 +99,11 @@ def scan(
         cfg.settings["ollama_url"], cfg.settings["embed_model"], cfg.settings["chat_model"]
     )
     try:
-        return _scan(cfg, store, http, ollama, now, local_date, progress, days, use_llm, result)
+        llm_ready = use_llm and ollama.ping()
+        if not llm_ready:  # a keyword ranking is a preview: it writes nothing, so it needs no lock
+            return _scan(cfg, store, http, ollama, now, local_date, progress, days, use_llm, llm_ready, result)
+        with scan_lock(cfg.state_dir):
+            return _scan(cfg, store, http, ollama, now, local_date, progress, days, use_llm, llm_ready, result)
     finally:
         if own_http:
             http.close()
@@ -115,6 +121,7 @@ def _scan(
     progress: Progress,
     days: int | None,
     use_llm: bool,
+    llm_ready: bool,
     result: RunResult,
 ) -> RunResult:
     last_runs = store.last_runs()
@@ -186,13 +193,12 @@ def _scan(
     trust_on = bool(cfg.settings.get("trust_check", True))
     followers: dict[str, int | None] = {}
     cleared: dict[str, str] = {}  # url of a rechecked repository: the held date it had
-    if cfg.source_enabled("github"):
+    if cfg.source_enabled("github") and llm_ready:  # a preview skips the held repositories
         for item, held_on in _recheck_held(cfg, http, seen, local_date, trust_on, followers, result, progress):
             fresh.append(item)
             cleared[item.url] = held_on
 
     # 2. Rank --------------------------------------------------------------------
-    llm_ready = use_llm and ollama.ping()
     likes, dislikes = store.vote_vectors()
     scored: list[Scored] = []
 
@@ -264,6 +270,32 @@ def _scan(
     for url in cleared:
         if url in seen and seen[url].get("held"):
             del seen[url]
+
+    if result.ranking == "keywords":
+        # A preview: the items are chosen and described as always, but nothing is saved or sent.
+        result.preview = True
+        for entry in chosen:
+            item = entry.item
+            what, why, verdict = fallback_note(item, entry.topic)
+            result.new_reports.append(
+                Report(
+                    date=local_date,
+                    topic=entry.topic.name,
+                    score=round(entry.score, 4),
+                    source=item.source,
+                    kind=item.kind,
+                    title=item.title,
+                    url=item.url,
+                    what=what,
+                    why=why,
+                    verdict=verdict,
+                    meta=item.meta,
+                    ranking="keywords",
+                )
+            )
+        result.all_reports = list(result.new_reports)
+        progress(f"Done: {len(result.new_reports)} items in a keyword preview")
+        return result
 
     # 3. Describe the chosen items ------------------------------------------------------
     language = str(cfg.settings["summary_language"])

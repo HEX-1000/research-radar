@@ -19,7 +19,7 @@ It does one thing: scan, filter and summarise. There is no chat.
 
 The chat model only rewrites the text it is given (a README, an abstract). Links, star counts, licenses and dates come from the source's own fields, never from the model. If a topic has nothing good, the note says so instead of padding.
 
-If Ollama is not running, a scan still works: items are matched by keywords and described with the first sentence of their own text. The note says so.
+If Ollama is not running, a scan is a keyword preview: it shows items matched by keywords, described with the first sentence of their own text, and saves and sends nothing. Start Ollama and scan again; the next scan covers the same window.
 
 ## Install
 
@@ -69,7 +69,7 @@ If a later edit breaks the file (one wrong indent is enough), scans go on with t
 
 A topic you add or edit later does not start empty. The next scan looks back `first_run_days` for that topic alone, once, and says so ("Looked back for: ..."). Items you have already been shown are not shown again.
 
-The top bar has a dot next to "ollama". Green means a scan can use both models. Amber means a model is missing and red means Ollama is not reachable; a notice then says what to do. Without Ollama a scan still works, but it matches by keywords only, so the interface does not start one by itself in that case.
+The top bar has a dot next to "ollama". Green means a scan can use both models. Amber means a model is missing and red means Ollama is not reachable; a notice then says what to do. Without Ollama, pressing s gives a keyword preview: the items are listed under the day with a "preview" mark, nothing is saved or sent, and votes are off for them. The interface does not start one by itself.
 
 ```
 radar init      # creates ~/.research-radar/interests.yaml from the example
@@ -141,9 +141,9 @@ radar schedule off
 
 The task runs while you are logged on. It needs no password and no administrator rights, opens no window, and starts as soon as possible after a missed time (the computer was off or asleep) once there is a network connection. The scan sends your digest by email or Telegram if you turned those on. What it did is written to `logs/scan.log` in your data folder.
 
-If Ollama or the embedding model is not ready, the scheduled scan waits briefly for Ollama and then does not scan at all, instead of matching by keywords and counting the day as read. `radar schedule status` then says so, and the next scan collects what was missed. If you move the folder or rebuild `.venv`, run `radar schedule on` again.
+If Ollama or the embedding model is not ready, the scheduled scan waits briefly for Ollama and then does not scan at all, instead of a keyword preview that counts the day as read. `radar schedule status` then says so, and the next scan collects what was missed. If you move the folder or rebuild `.venv`, run `radar schedule on` again.
 
-Without the Task Scheduler, `radar scan` does the same work from the command line. On Linux or macOS, `radar schedule on` prints a cron line to use, for example `45 19 * * * ... scan --scheduled`. Useful flags of `radar scan`: `--days N` to look back a fixed number of days, `--no-llm` to skip Ollama, `--explain` to print the scores of the top 30 candidates so you can tune `min_score`, and `--scheduled` (log to file, skip when Ollama is not ready) for schedulers.
+Without the Task Scheduler, `radar scan` does the same work from the command line. On Linux or macOS, `radar schedule on` prints a cron line to use, for example `45 19 * * * ... scan --scheduled`. Useful flags of `radar scan`: `--days N` to look back a fixed number of days, `--no-llm` for a keyword preview without Ollama (nothing is saved or sent), `--explain` to print the scores of the top 30 candidates so you can tune `min_score`, and `--scheduled` (log to file, skip when Ollama is not ready) for schedulers.
 
 ## Sources and their limits
 
