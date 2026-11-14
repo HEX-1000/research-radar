@@ -7,6 +7,7 @@ what makes an update reach everyone.
 
 ## Unreleased
 
+- `radar label` asks whether recent candidates fit your topics and saves each answer; `radar replay` shows, for each topic, what every bar from 0.30 to 0.60 would have kept, missed and let through, and how the trust check does on your labelled repositories.
 - A topic can set its own `min_score` and `max_per_topic` (`max_per_topic: 0` mutes it). An item goes to the topic whose bar it clears by the most, and `radar scan --explain` shows the bar next to each score.
 - The rising check now asks about every repository from the last `rising_days`; a deleted one no longer stops it and is named once in the notes.
 - A rising repository shows its license instead of "license not stated".

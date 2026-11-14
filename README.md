@@ -76,6 +76,8 @@ radar init      # creates ~/.research-radar/interests.yaml from the example
 radar doctor    # checks Ollama and every source from your machine (--local: Ollama only)
 radar           # opens the terminal interface
 radar shortcut  # Windows: puts an icon on the desktop (install.ps1 already did)
+radar label     # says whether recent candidates fit your topics, see Labelling
+radar replay    # shows what each bar would have kept, missed and let through
 radar update    # installs a newer version now, see Updates
 radar schedule on   # Windows: a daily scan without opening the app, see Scheduling
 ```
@@ -96,6 +98,12 @@ To keep your data somewhere else, set `RADAR_HOME` or pass `--home`.
 | `q` | quit |
 
 On launch it catches up automatically if any source has not been scanned today (`auto_scan_on_launch`), unless Ollama or the embedding model is missing or the example topics are still in place. Votes are kept and nudge later rankings: items that look like ones you marked `+` move up, items that look like ones you marked `-` move down. This is a simple heuristic, not a trained model. Votes are stored in `state/radar.db`; an older `feedback.json` is imported into it by the first scan or vote.
+
+## Labelling and replay
+
+`radar label` asks about candidates of the last 14 days (`--days N`), one at a time: the ones nearest to a topic's bar, taking one item from each topic in turn. It needs `state/radar.db`, so run a scan first. Answer `y` (it fits this topic), `n` (it does not), a number (it fits that topic instead), `l` (a lure: cracked software or the like), `o` (open the link), `s` (skip) or `q` (quit). Every answer is saved at once. Items you already labelled or voted on are not asked about again.
+
+`radar replay` reads those labels and your `+` and `-` votes (a vote counts as a label when the item has none) and prints, for each topic, how many labelled items each bar from 0.30 to 0.60 would have kept, let through as noise or missed. It scores them again against the current text of each topic, so it needs Ollama; without it, it uses the scores stored at scan time and says how many labels it left out. It does not suggest a value: choose `min_score` for a topic from the table. A lure counts as a "no" for every topic. It ends with how the trust check for small GitHub repositories fares on the repositories you labelled or marked `+`; a repository with only a `-` vote is left out there, because a `-` does not say whether it is a lure.
 
 ## A desktop icon (Windows)
 

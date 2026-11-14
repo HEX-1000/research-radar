@@ -49,6 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     send_p.add_argument("--dry-run", action="store_true", help="write the digest page and show what would be sent, send nothing")
     send_p.add_argument("--test", action="store_true", help="send a short test message through each enabled channel")
 
+    label_p = sub.add_parser("label", help="say whether recent candidates fit your topics (builds the labelled set)")
+    label_p.add_argument("--days", type=int, default=14, help="ask about candidates of the last N days (default 14)")
+    sub.add_parser("replay", help="show what each bar would keep, miss and let through for your labels")
+
     sub.add_parser("shortcut", help="put a Research Radar icon on the Windows desktop")
     schedule_p = sub.add_parser("schedule", help="run a scan every day without opening the interface (Windows Task Scheduler)")
     schedule_p.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
@@ -233,6 +237,33 @@ def cmd_send(cfg: Config, date: str | None, dry_run: bool, test: bool) -> int:
     for line in describe(results):
         print(line)
     return 0 if all(r.ok for r in results) else 1
+
+
+def cmd_label(cfg: Config, days: int) -> int:
+    from .candidates import StoreError
+    from .labelling import run_label
+
+    if cfg.problem:
+        print(f"warning: {cfg.problem}", flush=True)
+    try:
+        return run_label(cfg, days)
+    except StoreError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_replay(cfg: Config) -> int:
+    from .candidates import StoreError
+    from .labelling import run_replay
+
+    ollama = Ollama(cfg.settings["ollama_url"], cfg.settings["embed_model"], cfg.settings["chat_model"], timeout=10.0)
+    try:
+        return run_replay(cfg, ollama)
+    except StoreError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        ollama.close()
 
 
 def cmd_shortcut(home_arg: str | None) -> int:
@@ -455,6 +486,10 @@ def main(argv: list[str] | None = None) -> int:
         cfg = _load(args.home)
         if command == "scan":
             return cmd_scan(cfg, args.days, args.no_llm, args.explain)
+        if command == "label":
+            return cmd_label(cfg, args.days)
+        if command == "replay":
+            return cmd_replay(cfg)
         if command == "doctor":
             return cmd_doctor(cfg, local_only=args.local)
         if command == "send":

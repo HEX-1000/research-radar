@@ -341,12 +341,22 @@ class CandidateStore:
         row = self.conn.execute("SELECT key FROM link WHERE url = ?", (url,)).fetchone()
         return row[0] if row else key_from_url(url)
 
+    def votes_by_key(self) -> dict[str, int]:
+        """Every vote by item key."""
+        if self.schema >= 2:
+            return {key: value for key, value in self.conn.execute("SELECT key, value FROM vote")}
+        # a schema 1 file opened for reading: its votes are still in feedback.json
+        return {self.key_for_url(url): v for url, v in _read_feedback(self.path.parent).items() if v}
+
+    def labels(self) -> list[tuple[str, str, str]]:
+        """(key, topic, value) of every label; none before schema 2."""
+        if self.schema < 2:
+            return []
+        return [tuple(row) for row in self.conn.execute("SELECT key, topic, value FROM label ORDER BY key, topic")]
+
     def vote_vectors(self, model: str) -> tuple[list[list[float]], list[list[float]]]:
         """Vectors of liked and disliked items, from the votes of the store."""
-        if self.schema >= 2:
-            keyed = {key: value for key, value in self.conn.execute("SELECT key, value FROM vote")}
-        else:  # a schema 1 file opened for reading: its votes are still in feedback.json
-            keyed = {self.key_for_url(url): v for url, v in _read_feedback(self.path.parent).items() if v}
+        keyed = self.votes_by_key()
         vectors = self.vectors(keyed, model)
         likes = [vectors[k] for k, v in keyed.items() if v > 0 and k in vectors]
         dislikes = [vectors[k] for k, v in keyed.items() if v < 0 and k in vectors]
@@ -387,6 +397,27 @@ class CandidateStore:
             raise
         if self.create:
             self._persist()
+
+    def set_labels(self, key: str, labels: Iterable[tuple[str, str]], now: datetime | None = None) -> None:
+        """Write the (topic, value) labels of one item in a transaction of their own. A label written
+        again replaces the old one."""
+        if not self.write or self.schema < 2:
+            raise StoreError("This store was opened for reading only.")
+        at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        conn = self.conn
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for topic, value in labels:
+                conn.execute("INSERT OR REPLACE INTO label (key, topic, value, at) VALUES (?, ?, ?, ?)", (key, topic, value, at))
+            conn.execute("COMMIT")
+        except sqlite3.Error as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise StoreError(f"Could not write the label to {self.path}: {exc}.") from exc
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
 
     def _persist(self) -> None:
         """Write the store that was built in memory to its file, then retire the JSON files."""
