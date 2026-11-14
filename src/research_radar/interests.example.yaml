@@ -61,8 +61,8 @@ sources:
     enabled: true
   huggingface-papers:
     enabled: true
-  huggingface-models:
-    enabled: true
+  huggingface-models:  # trending models, matched on tags only; turn on if your topics are about models
+    enabled: false
     limit: 25
   feeds:               # Atom and RSS; reads nothing until a topic lists a feed (see the topics below)
     enabled: true

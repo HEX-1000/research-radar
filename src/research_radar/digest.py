@@ -24,7 +24,14 @@ WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 
 VERDICT_ORDER = {"install": 0, "read": 1, "watch": 2, "skip": 3}
 VERDICT_LABEL = {"install": "TRY", "read": "READ", "watch": "WATCH", "skip": "SKIP"}
-KIND_LABEL = {"repo": "repository", "paper": "paper", "model": "model", "release": "release", "article": "article"}
+KIND_LABEL = {
+    "repo": "repository",
+    "paper": "paper",
+    "model": "model",
+    "release": "release",
+    "commit": "commit",
+    "article": "article",
+}
 
 REPO_URL = "https://github.com/HEX-1000/research-radar"
 TELEGRAM_LIMIT = 4000  # the API allows 4096 characters per message

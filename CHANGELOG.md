@@ -7,6 +7,10 @@ what makes an update reach everyone.
 
 ## Unreleased
 
+- A watched GitHub feed is named `owner/name`, also when you list its `commits.atom`, and its items are releases, commits or (any other feed) articles. A short commit message gets "New commit to owner/name: ...", and the count of earlier items says releases, commits or entries.
+- A feed entry whose id is not a URL (a bare number such as `1234`) is stored with its feed's address, so two feeds with the same short id are no longer taken for one entry.
+- The scan asks GitHub for the follower count of small, starred repositories that it did not show but that came close (up to 10 owners per scan), so `radar replay` can say how the trust check does on them.
+- The `huggingface-models` source is off by default, because it matches on tags only and no model ever reached the bar. A file that names the source keeps what it says.
 - A new `feeds` source reads Atom and RSS. A topic's `watch` list names GitHub repositories (`owner/name`, read through their releases feed) or feed URLs; what appears there is shown under that topic without a bar and outside `max_items` and `max_per_topic`, at most one item per feed and scan, with "and N earlier entries since ..." when there were more. A topic's `feeds: urls:` lists blogs whose posts are scored like any other item. `radar doctor` reads every feed once.
 - `radar label` also asks about GitHub repositories whose only signal is a `-` vote, and `radar replay` names the repositories behind "others caught" and "lures not caught".
 - Telegram votes are saved page by page, so a failure while reading a later page no longer loses the votes of an earlier one.

@@ -54,7 +54,7 @@ class Item:
     """One thing a source found: a repository, a paper or a model."""
 
     source: str  # github, arxiv, huggingface-papers, huggingface-models, forgejo, feeds
-    kind: str  # repo, paper, model, release (a watched feed) or article (a feed's post)
+    kind: str  # repo, paper, model, release or commit (a watched GitHub feed), article (any other feed entry)
     title: str
     url: str
     text: str = ""

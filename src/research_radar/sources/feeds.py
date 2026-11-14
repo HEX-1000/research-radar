@@ -28,6 +28,10 @@ MAX_ARTICLES = 30  # entries per `feeds.urls` feed and scan
 _ATOM = "{http://www.w3.org/2005/Atom}"
 _SCRIPTS = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
 _TAGS = re.compile(r"<[^>]*>")
+_GITHUB_FEED_PATH = re.compile(r"^/(?P<owner>[^/]+)/(?P<name>[^/]+)/.+$")
+_RELEASES_PATH = re.compile(r"^/[^/]+/[^/]+/releases\.atom$")
+_COMMITS_PATH = re.compile(r"^/[^/]+/[^/]+/commits(\.atom|/.+\.atom)$")
+_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
 def is_feed_url(value: str) -> bool:
@@ -50,13 +54,43 @@ def is_github_releases(url: str) -> bool:
     return parts.netloc.lower() == "github.com" and parts.path.endswith("/releases.atom")
 
 
+def github_label(url: str) -> str | None:
+    """`owner/name` for a feed on github.com whose path starts with `/owner/name/`, else None."""
+    parts = urlsplit(url)
+    if parts.netloc.lower() != "github.com":
+        return None
+    found = _GITHUB_FEED_PATH.match(parts.path)
+    label = f"{found['owner']}/{found['name']}" if found else ""
+    return label if is_github_name(label) else None
+
+
+def watch_kind(url: str) -> str:
+    """The kind of an item from a watched feed: `release` and `commit` for the two GitHub feeds,
+    `article` for any other."""
+    parts = urlsplit(url)
+    if parts.netloc.lower() == "github.com":
+        if _RELEASES_PATH.match(parts.path):
+            return "release"
+        if _COMMITS_PATH.match(parts.path):
+            return "commit"
+    return "article"
+
+
+def entry_key(feed: str, entry_id: str) -> str:
+    """The id an entry is stored under. An id that starts with a URI scheme (a GitHub `tag:` id, an
+    http(s) guid) is unique everywhere and is used as it is; any other id, such as a guid `1234`, is
+    only unique inside its feed and is prefixed with the feed's URL."""
+    return entry_id if _URI_SCHEME.match(entry_id) else f"{feed}#{entry_id}"
+
+
 @dataclass
 class FeedRef:
     """One feed to read: where, what to call it, and whether it is a watch entry (and for which topic)."""
 
     url: str
-    label: str | None = None  # owner/name for a GitHub entry; else the feed's own title is used
+    label: str | None = None  # owner/name for a watched github.com feed; else the feed's own title is used
     watch_topic: str | None = None
+    entry: str | None = None  # a watch entry as written (owner/name or a URL); what `radar doctor` calls the feed
 
 
 def configured(config: Config) -> list[FeedRef]:
@@ -66,7 +100,7 @@ def configured(config: Config) -> list[FeedRef]:
     for topic in config.topics:
         for entry in topic.watch:
             url = feed_url(entry)
-            refs.setdefault(url, FeedRef(url, entry.strip() if is_github_name(entry.strip()) else None, topic.name))
+            refs.setdefault(url, FeedRef(url, github_label(url), topic.name, entry.strip()))
     for topic in config.topics:
         for url in topic.source_option(NAME, "urls") or []:
             refs.setdefault(str(url).strip(), FeedRef(str(url).strip()))
@@ -205,12 +239,12 @@ def fold_earlier(newer: Item, older: Item) -> None:
 
 def _item(ref: FeedRef, feed: Feed, entry: Entry) -> Item:
     label = ref.label or feed.title or urlsplit(ref.url).netloc
-    meta: dict = {"feed": ref.url, "entry_id": entry.id, "label": label}
+    meta: dict = {"feed": ref.url, "entry_id": entry_key(ref.url, entry.id), "label": label}
     if ref.watch_topic:
         meta["watch_topic"] = ref.watch_topic
     return Item(
         source=NAME,
-        kind="release" if ref.watch_topic else "article",
+        kind=watch_kind(ref.url) if ref.watch_topic else "article",
         title=f"{label}: {entry.title or entry.link}",
         url=entry.link,
         text=entry.text,
@@ -225,7 +259,7 @@ def fetch(ctx: FetchContext) -> list[Item]:
         try:
             feed = read_feed(ctx.http, ref.url)
         except SourceError as exc:
-            ctx.warn(f"{NAME}: {ref.label or ref.url}: {exc}")
+            ctx.warn(f"{NAME}: {ref.entry or ref.url}: {exc}")
             continue
         dated = [(e.published, e) for e in feed.entries if e.published and ctx.since <= e.published <= ctx.until]
         dated.sort(key=lambda pair: pair[0], reverse=True)  # stable: the entry listed first wins a tie

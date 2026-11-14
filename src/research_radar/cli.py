@@ -436,7 +436,7 @@ def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
                 def probe_feed(ref=ref) -> str:
                     return feeds.describe_feed(feeds.read_feed(http, ref.url), ref.url)
 
-                results.append(_probe(f"feeds ({ref.label or ref.url})", probe_feed))
+                results.append(_probe(f"feeds ({ref.entry or ref.url})", probe_feed))
     finally:
         http.close()
     from .deliver import check_email, check_telegram

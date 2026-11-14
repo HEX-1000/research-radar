@@ -39,7 +39,7 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
     "github": {"enabled": True, "min_stars": 5, "per_query": 10},
     "arxiv": {"enabled": True, "max_results": 100},
     "huggingface-papers": {"enabled": True},
-    "huggingface-models": {"enabled": True, "limit": 25},
+    "huggingface-models": {"enabled": False, "limit": 25},  # tags only, so the noisiest source: opt in
     "feeds": {"enabled": True},  # reads nothing until a topic lists a feed (`watch`, `feeds.urls`)
     "forgejo": {
         "enabled": True,

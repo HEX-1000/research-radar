@@ -17,10 +17,9 @@ from .config import Config, Topic
 from .llm import OllamaError
 from .models import Item
 from .pipeline import topic_fingerprint
-from .ranker import cosine, keyword_hits
+from .ranker import LABEL_BAND, cosine, keyword_hits
 from .sources.github import THIN_MAX_FOLLOWERS, looks_thin
 
-LABEL_BAND = 0.08  # items this far below the bar of their topic are still asked about
 POOL_OUTCOMES = ("shown", "below_bar", "topic_full", "day_full", "held")
 NO_STORE = "No candidate store yet. Run a scan first."
 TEXT_SHOWN = 400  # characters of the stored text shown while labelling

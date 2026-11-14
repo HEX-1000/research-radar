@@ -19,6 +19,11 @@ from .models import Item
 
 EmbedFn = Callable[[list[str], str], list[list[float]]]
 
+# Items this far below the bar of their topic are still asked about by `radar label`, and the scan
+# asks the follower count of a thin looking repository inside this band. It lives here because
+# labelling.py imports pipeline.py.
+LABEL_BAND = 0.08
+
 
 @dataclass
 class Scored:

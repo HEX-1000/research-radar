@@ -19,16 +19,27 @@ from .llm import Ollama, OllamaError
 from .lock import scan_lock
 from .models import Item, Report, SkippedSource
 from .notes import write_note
-from .ranker import Ranking, Scored, rank, select
+from .ranker import LABEL_BAND, Ranking, Scored, rank, select
 from .sources import SOURCES, FetchContext
 from .sources.arxiv import NAME as ARXIV, OVERLAP_DAYS as ARXIV_OVERLAP_DAYS
 from .sources.feeds import fold_earlier
-from .sources.github import HOLD_DAYS, check_repos, fetch_readme, fetch_repo, parse_repo, thin_reason
+from .sources.github import (
+    HOLD_DAYS,
+    check_repos,
+    fetch_readme,
+    fetch_repo,
+    looks_thin,
+    owner_followers,
+    parse_repo,
+    thin_reason,
+)
 from .sources.github import GONE as GITHUB_GONE
 from .store import Store
 from .summarize import WATCH_MIN_TEXT, fallback_note, summarize, watch_note
 
 Progress = Callable[[str], None]
+
+MAX_UNCHOSEN_OWNERS = 10  # follower counts asked per scan for repositories that selection did not ask about
 
 
 @dataclass
@@ -406,6 +417,12 @@ def _scan(
     if cfg.source_enabled("github"):
         _add_rising(cfg, http, candidates, record, now, local_date, result, progress)
 
+    # 4b. Follower counts of thin looking repositories that were not chosen -------------
+    # `select` asks about a repository only when it would take a place. Replay needs the count
+    # of the others in the label band too; their outcome does not change.
+    if trust_on:
+        _ask_unchosen_owners(http, scored, record)
+
     # 5. Save --------------------------------------------------------------------
     record.chat_model = str(getattr(ollama, "chat_model", "") or cfg.settings.get("chat_model") or "")
     candidates.save(record)
@@ -434,6 +451,30 @@ def _scan(
         result.warnings.append(f"Could not write the digest file ({type(exc).__name__}).")
     progress(f"Done: {len(result.new_reports)} new items")
     return result
+
+
+def _ask_unchosen_owners(http: Http, scored: list[Scored], record: ScanRecord) -> None:
+    """Ask the follower count of the owner of each GitHub repository that selection stopped (by the
+    bar or a cap), is inside the label band of its topic and looks thin, when the scan has no count
+    for that owner yet. At most MAX_UNCHOSEN_OWNERS owners, in the order of `scored`. The count goes
+    into the scan's observation row; outcome, state and warnings do not change. A failed request
+    leaves the count empty."""
+    asked = 0
+    for entry in scored:
+        if asked >= MAX_UNCHOSEN_OWNERS:
+            return
+        item = entry.item
+        if item.source != "github" or entry.outcome not in ("day_full", "topic_full", "below_bar"):
+            continue
+        if entry.score < entry.bar - LABEL_BAND:
+            continue
+        owner = item.meta.get("owner")
+        if not owner or owner.lower() in record.followers:
+            continue
+        if not looks_thin(item.meta.get("size_kb"), item.meta.get("stars")):
+            continue
+        owner_followers(http, owner, record.followers)
+        asked += 1
 
 
 def _note_without_model(entry: Scored) -> tuple[str, str, str]:

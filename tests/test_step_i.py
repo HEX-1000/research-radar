@@ -479,12 +479,12 @@ def report(**meta) -> Report:
     return Report(date="2026-10-27", topic="t", score=0.0, source="feeds", kind="release", title="o/r: v1", url="https://x.org/v1", meta=meta)
 
 
-def test_the_meta_line_of_a_release_counts_the_earlier_entries():
+def test_the_meta_line_of_a_release_counts_the_earlier_releases():
     assert meta_line(report()) == ""
     assert meta_line(report(earlier_entries=0, earlier_since="2026-10-02")) == ""
-    assert meta_line(report(earlier_entries=3, earlier_since="2026-10-02")) == "and 3 earlier entries since 2 October"
-    assert meta_line(report(earlier_entries=1, earlier_since="2026-10-02")) == "and 1 earlier entry since 2 October"
-    assert meta_line(report(earlier_entries=2)) == "and 2 earlier entries"
+    assert meta_line(report(earlier_entries=3, earlier_since="2026-10-02")) == "and 3 earlier releases since 2 October"
+    assert meta_line(report(earlier_entries=1, earlier_since="2026-10-02")) == "and 1 earlier release since 2 October"
+    assert meta_line(report(earlier_entries=2)) == "and 2 earlier releases"
 
 
 def test_release_and_article_have_a_label():
@@ -496,8 +496,8 @@ def test_a_scan_with_a_watch_item_renders_in_the_note_and_the_digest(tmp_path, w
     cfg = config(tmp_path, {"watch": ["encounter/decomp-toolkit"]})
     result = run(cfg, site)
     note = result.note_path.read_text(encoding="utf-8")
-    assert "**encounter/decomp-toolkit: v1**" in note and "(and 1 earlier entry since 2026-10-25" not in note
-    assert "and 1 earlier entry since 25 October" in note
+    assert "**encounter/decomp-toolkit: v1**" in note and "(and 1 earlier release since 2026-10-25" not in note
+    assert "and 1 earlier release since 25 October" in note
     assert "release · feeds" in result.digest_path.read_text(encoding="utf-8")
 
 

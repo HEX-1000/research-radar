@@ -15,6 +15,10 @@ MONTHS = (
 )
 
 
+# What "earlier entries" of a watched feed are called, by the kind of the item: (one, many).
+EARLIER_NOUNS = {"release": ("release", "releases"), "commit": ("commit", "commits"), "article": ("entry", "entries")}
+
+
 def _count(value: object) -> str | None:
     return f"{value:,}" if isinstance(value, int) else None
 
@@ -45,12 +49,6 @@ def meta_line(report: Report) -> str:
         upvotes = _count(meta.get("upvotes"))
         if upvotes:
             parts.append(f"{upvotes} upvotes")
-    elif report.kind == "release":
-        earlier = meta.get("earlier_entries")
-        if isinstance(earlier, int) and earlier > 0:
-            noun = "entry" if earlier == 1 else "entries"
-            since = _day_month(str(meta.get("earlier_since") or ""))
-            parts.append(f"and {earlier} earlier {noun} since {since}" if since else f"and {earlier} earlier {noun}")
     elif report.kind == "model":
         if meta.get("task"):
             parts.append(str(meta["task"]))
@@ -60,6 +58,12 @@ def meta_line(report: Report) -> str:
         downloads = _count(meta.get("downloads"))
         if downloads:
             parts.append(f"{downloads} downloads")
+    earlier = meta.get("earlier_entries")  # an item of a watched feed, whatever its kind
+    if isinstance(earlier, int) and earlier > 0:
+        nouns = EARLIER_NOUNS.get(report.kind, EARLIER_NOUNS["article"])
+        noun = nouns[0] if earlier == 1 else nouns[1]
+        since = _day_month(str(meta.get("earlier_since") or ""))
+        parts.append(f"and {earlier} earlier {noun} since {since}" if since else f"and {earlier} earlier {noun}")
     return ", ".join(parts)
 
 
