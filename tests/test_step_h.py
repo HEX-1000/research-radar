@@ -252,9 +252,9 @@ def test_a_failed_confirm_writes_the_same_votes_again(tmp_path, tg):
     tg.press(10, URL_ONE, "+")
     tg.fail["getUpdates"] = 2  # the read works, the confirming call is refused
     count, warning = collect(cfg)
-    assert count == 0 and "Could not collect" in warning and TOKEN not in warning
+    assert count == 1 and "Could not collect" in warning and TOKEN not in warning
     assert db.rows("SELECT key, value FROM vote") == [("github:alice/one", 1)]  # written before the confirm
-    assert tg.of("editMessageReplyMarkup") == []
+    assert len(tg.of("editMessageReplyMarkup")) == 1  # a committed vote gets its check mark (decision 24)
     tg.fail.clear()
     assert collect(cfg) == (1, "")  # the update is still there and gives the same vote
     assert db.rows("SELECT key, value FROM vote") == [("github:alice/one", 1)]

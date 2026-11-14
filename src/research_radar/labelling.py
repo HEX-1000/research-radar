@@ -47,6 +47,7 @@ class Candidate:
     url: str
     published: str | None
     source: str = ""
+    vote: int = 0  # a - vote on a GitHub repository that has no label (decision 23)
 
 
 def build_pool(store: CandidateStore, cfg: Config, now: datetime, days: int) -> list[Candidate]:
@@ -69,9 +70,14 @@ def build_pool(store: CandidateStore, cfg: Config, now: datetime, days: int) -> 
     for key, topic, score, outcome, title, text, kind, url, published in rows:
         if topic not in bars or outcome not in POOL_OUTCOMES or score < bars[topic] - LABEL_BAND:
             continue
-        if key in voted or {topic, "*"} & done_topics.get(key, set()):
+        if {topic, "*"} & done_topics.get(key, set()):
             continue
-        by_topic[topic].append(Candidate(key, topic, bars[topic], score, outcome, title, text, kind, url, published))
+        minus = key.startswith("github:") and voted.get(key) == -1 and not done_topics.get(key)
+        if key in voted and not minus:
+            continue
+        by_topic[topic].append(
+            Candidate(key, topic, bars[topic], score, outcome, title, text, kind, url, published, vote=-1 if minus else 0)
+        )
     queues = []
     for name in bars:  # the order of interests.yaml
         queue = sorted(by_topic[name], key=lambda c: (abs(c.score - c.bar), c.key))
@@ -91,7 +97,8 @@ def _source_of(store: CandidateStore, candidate: Candidate) -> str:
 def _show(store: CandidateStore, c: Candidate, left: int, show: Callable[[str], None]) -> None:
     text = " ".join(c.text.split())[:TEXT_SHOWN] or "(no text stored)"
     show("")
-    show(f"[{left} left] {c.topic} · bar {c.bar:.2f} · score {c.score:.3f} · {c.outcome}")
+    vote = " · vote -" if c.vote < 0 else ""
+    show(f"[{left} left] {c.topic} · bar {c.bar:.2f} · score {c.score:.3f} · {c.outcome}{vote}")
     show(c.title)
     show(f"{c.kind} · {_source_of(store, c)} · {(c.published or 'no date')[:10]}")
     show(c.url)
@@ -175,6 +182,8 @@ class TrustReplay:
     lures: dict[str, int] = field(default_factory=dict)  # caught, not caught, unknown, no observation
     others: dict[str, int] = field(default_factory=dict)
     minus_only: int = 0  # repositories whose only signal is a - vote: lure or not, nobody said
+    others_caught: list[tuple[str, tuple]] = field(default_factory=list)  # key, first observation
+    lures_missed: list[tuple[str, tuple]] = field(default_factory=list)
 
 
 @dataclass
@@ -275,10 +284,13 @@ def _scored_from_rows(store, topics, wanted, model) -> dict[tuple[str, str], flo
     return scores
 
 
-def _trust_class(store: CandidateStore, key: str) -> str:
-    row = store.conn.execute(
+def _first_observation(store: CandidateStore, key: str) -> tuple | None:
+    return store.conn.execute(
         "SELECT size_kb, stars, followers FROM observation WHERE key = ? ORDER BY at LIMIT 1", (key,)
     ).fetchone()
+
+
+def _trust_class(row: tuple | None) -> str:
     if row is None:
         return "no observation"
     size_kb, stars, followers = row
@@ -293,7 +305,13 @@ def _trust(store: CandidateStore, lures: set[str], others: set[str], minus_only:
     """A - vote alone does not say whether a repository is a lure, so it is in neither row."""
     trust = TrustReplay({c: 0 for c in TRUST_CLASSES}, {c: 0 for c in TRUST_CLASSES})
     for key in sorted(k for k in lures | others if k.startswith("github:")):
-        (trust.lures if key in lures else trust.others)[_trust_class(store, key)] += 1
+        row = _first_observation(store, key)
+        cls = _trust_class(row)
+        (trust.lures if key in lures else trust.others)[cls] += 1
+        if key in lures and cls == "not caught":
+            trust.lures_missed.append((key, row))
+        elif key not in lures and cls == "caught":
+            trust.others_caught.append((key, row))
     trust.minus_only = sum(1 for key in minus_only if key.startswith("github:"))
     return trust
 
@@ -362,6 +380,13 @@ def bar_rows(row: TopicReplay) -> list[tuple[float, int, int, int]]:
     ]
 
 
+def _name_line(key: str, row: tuple) -> str:
+    size_kb, stars, followers = row
+    size = "size unknown" if size_kb is None else f"{size_kb} KB"
+    people = "followers not asked" if followers is None else f"{followers} follower{'' if followers == 1 else 's'}"
+    return f"{key.split(':', 1)[1]}  {size}, {stars} stars, {people}"
+
+
 def format_replay(result: Replay) -> list[str]:
     lines: list[str] = []
     if result.mode == "stored scores":
@@ -392,11 +417,16 @@ def format_replay(result: Replay) -> list[str]:
     lines.append(f"{'':8}" + "".join(f"{c:>16}" for c in TRUST_CLASSES))
     for name, counts in (("lures", trust.lures), ("others", trust.others)):
         lines.append(f"{name:8}" + "".join(f"{counts.get(c, 0):16d}" for c in TRUST_CLASSES))
+    for title, names in (("Others caught", trust.others_caught), ("Lures not caught", trust.lures_missed)):
+        if names:
+            lines.append("")
+            lines.append(f"{title}:")
+            lines.extend(f"  {_name_line(key, row)}" for key, row in names)
     if trust.minus_only:
         one = trust.minus_only == 1
         lines.append(
             f"{trust.minus_only} repositor{'y' if one else 'ies'} with only a - vote {'is' if one else 'are'} left out:"
-            " a - vote does not say whether it is a lure."
+            " a - vote does not say whether it is a lure. `radar label` asks about them."
         )
     return lines
 

@@ -163,7 +163,7 @@ def test_labelled_and_voted_items_are_left_out(tmp_path):
     db.label("github:labelled-here", "Alpha", "no")
     db.label("github:labelled-elsewhere", "Beta", "fits")  # a label for another topic does not count
     db.label("github:lure", "*", "lure")
-    db.vote("github:voted", -1)
+    db.vote("github:voted", 1)  # a - vote on a repository is asked about (step J)
     assert sorted(c.key for c in pool_of(cfg)) == ["github:labelled-elsewhere", "github:plain"]
 
 
@@ -542,7 +542,7 @@ def test_trust_check_counts_lures_and_others_from_the_first_observation(tmp_path
     assert trust.others == {"caught": 1, "not caught": 2, "unknown": 0, "no observation": 0}
     assert trust.minus_only == 0
     lines = format_replay(replay(cfg, AxisOllama()))
-    assert lines[-4].startswith("Trust check on labelled GitHub repositories")
+    assert any(line.startswith("Trust check on labelled GitHub repositories") for line in lines)
 
 
 def test_trust_check_counts_a_plus_vote_as_other_and_leaves_a_lone_minus_vote_out(tmp_path):
@@ -567,7 +567,7 @@ def test_trust_check_counts_a_plus_vote_as_other_and_leaves_a_lone_minus_vote_ou
     assert trust.others == {"caught": 1, "not caught": 1, "unknown": 0, "no observation": 0}
     assert trust.minus_only == 2
     lines = format_replay(replay(cfg, AxisOllama()))
-    assert lines[-1] == "2 repositories with only a - vote are left out: a - vote does not say whether it is a lure."
+    assert lines[-1] == "2 repositories with only a - vote are left out: a - vote does not say whether it is a lure. `radar label` asks about them."
 
 
 def test_replay_reads_a_schema_1_store_without_writing(tmp_path):

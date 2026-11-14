@@ -329,25 +329,17 @@ def find_telegram_chats(cfg: Config) -> list[tuple[str, str]]:
 # votes -----------------------------------------------------------------------------------
 
 
-def _read_updates(token: str) -> list[dict[str, Any]]:
-    """Every pending update. Without `offset` and `allowed_updates`, so that `radar telegram-chat`
-    still sees its messages. A full page is followed by the next one, at most UPDATE_CALLS calls."""
-    updates: list[dict[str, Any]] = []
-    payload: dict[str, Any] = {"limit": UPDATE_PAGE}
-    for _ in range(UPDATE_CALLS):
-        page = _telegram_call(token, "getUpdates", payload) or []
-        updates.extend(page)
-        if len(page) < UPDATE_PAGE:
-            break
-        payload = {"limit": UPDATE_PAGE, "offset": max(int(u["update_id"]) for u in page) + 1}
-    return updates
-
-
 def collect_telegram_votes(cfg: Config, candidates: CandidateStore, now: datetime) -> tuple[int, str]:
     """Record the votes pressed on the buttons of earlier digests: (votes written, a warning or "").
 
     Run under the scan lock with a store opened for writing and already on disk. Nothing here
-    raises: what cannot be read now is read again by the next run."""
+    raises: what cannot be read now is read again by the next run.
+
+    Pages of `getUpdates` are committed one by one: the call that asks for the next page (or the
+    final call with `limit` 1) carries the `offset` that confirms the page before it, so a page is
+    written to the store before that call is made. A committed vote is counted and gets its check
+    mark also when that call fails; the next run then writes it again. Without `offset` and
+    `allowed_updates`, so that `radar telegram-chat` still sees its messages."""
     if not candidates.write or candidates.create or candidates.schema < 2:
         return 0, ""
     try:
@@ -355,49 +347,60 @@ def collect_telegram_votes(cfg: Config, candidates: CandidateStore, now: datetim
         chat = telegram_chat_id(cfg)
     except DeliveryError:
         return 0, ""  # delivery reports a missing token or chat itself
+    pressed: dict[str, tuple[int, str, int]] = {}  # item key -> (vote, button hash, message id)
+    warning = ""
     try:
-        updates = _read_updates(token)
-        if not updates:
-            return 0, ""
         urls: dict[str, str] = {}  # hash of a link URL -> item key
         for key, url in candidates.conn.execute(
             "SELECT item.key, link.url FROM item JOIN link ON link.key = item.key"
             " WHERE item.state IN ('shown', 'gone')"
         ):
             urls[vote_hash(url)] = key
-        pressed: dict[str, tuple[int, str, int]] = {}  # item key -> (vote, button hash, message id)
-        for update in sorted(updates, key=lambda u: int(u.get("update_id", 0))):
-            query = update.get("callback_query") or {}
-            message = query.get("message") or {}
-            if str((message.get("chat") or {}).get("id", "")) != chat:
+        payload: dict[str, Any] = {"limit": UPDATE_PAGE}
+        for pages in range(1, UPDATE_CALLS + 1):
+            page = _telegram_call(token, "getUpdates", payload) or []
+            if not page:
+                break  # an empty page after an offset: the pages before it are confirmed
+            on_page: dict[str, tuple[int, str, int]] = {}
+            for update in sorted(page, key=lambda u: int(u.get("update_id", 0))):
+                query = update.get("callback_query") or {}
+                message = query.get("message") or {}
+                if str((message.get("chat") or {}).get("id", "")) != chat:
+                    continue
+                match = VOTE_DATA.match(str(query.get("data") or ""))
+                key = urls.get(match.group(2)) if match else None
+                if not match or not key or "message_id" not in message:
+                    continue
+                on_page[key] = (1 if match.group(1) == "+" else -1, match.group(2), int(message["message_id"]))
+            if on_page:
+                candidates.set_votes({k: v[0] for k, v in on_page.items()}, "telegram", now)
+                pressed.update(on_page)  # a later page writes over an earlier one
+            offset = max(int(u["update_id"]) for u in page) + 1
+            if len(page) == UPDATE_PAGE and pages < UPDATE_CALLS:
+                payload = {"limit": UPDATE_PAGE, "offset": offset}  # confirms this page, reads the next
                 continue
-            match = VOTE_DATA.match(str(query.get("data") or ""))
-            key = urls.get(match.group(2)) if match else None
-            if not match or not key or "message_id" not in message:
-                continue
-            pressed[key] = (1 if match.group(1) == "+" else -1, match.group(2), int(message["message_id"]))
-        if pressed:
-            candidates.set_votes({k: v[0] for k, v in pressed.items()}, "telegram", now)
-        # Only after the commit are the updates confirmed. A failure above leaves them for the next run.
-        _telegram_call(token, "getUpdates", {"offset": max(int(u["update_id"]) for u in updates) + 1, "limit": 1})
-        for vote, h, message_id in pressed.values():
-            try:
-                _telegram_call(
-                    token,
-                    "editMessageReplyMarkup",
-                    {
-                        "chat_id": chat,
-                        "message_id": message_id,
-                        "reply_markup": {"inline_keyboard": keyboard_for_hash(h, vote)},
-                    },
-                )
-            except DeliveryError:
-                pass  # a failed edit is ignored
-        return len(pressed), ""
+            # confirms the last page; when it fails, the next run reads that page again
+            _telegram_call(token, "getUpdates", {"offset": offset, "limit": 1})
+            break
     except (DeliveryError, StoreError) as exc:
-        return 0, f"Could not collect the Telegram votes: {exc}"
+        warning = f"Could not collect the Telegram votes: {exc}"
     except Exception as exc:  # a scan must survive anything the collecting code throws
-        return 0, f"Could not collect the Telegram votes ({type(exc).__name__})."
+        warning = f"Could not collect the Telegram votes ({type(exc).__name__})."
+    # the count and the edits cover every committed page, also when a later call failed (decision 24)
+    for vote, h, message_id in pressed.values():
+        try:
+            _telegram_call(
+                token,
+                "editMessageReplyMarkup",
+                {
+                    "chat_id": chat,
+                    "message_id": message_id,
+                    "reply_markup": {"inline_keyboard": keyboard_for_hash(h, vote)},
+                },
+            )
+        except Exception:
+            pass  # a failed edit is ignored
+    return len(pressed), warning
 
 
 # sending ---------------------------------------------------------------------------------
