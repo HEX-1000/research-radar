@@ -419,6 +419,27 @@ class CandidateStore:
                 conn.execute("ROLLBACK")
             raise
 
+    def set_votes(self, votes: dict[str, int], via: str, now: datetime | None = None) -> None:
+        """Write votes (1 or -1 by item key) in one transaction of their own; a vote replaces
+        whatever the item had."""
+        if not self.write or self.schema < 2:
+            raise StoreError("This store was opened for reading only.")
+        at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        conn = self.conn
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for key, value in votes.items():
+                conn.execute("INSERT OR REPLACE INTO vote (key, value, at, via) VALUES (?, ?, ?, ?)", (key, value, at, via))
+            conn.execute("COMMIT")
+        except sqlite3.Error as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise StoreError(f"Could not write the votes to {self.path}: {exc}.") from exc
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+
     def _persist(self) -> None:
         """Write the store that was built in memory to its file, then retire the JSON files."""
         tmp = self.path.with_name(DB_NAME + ".tmp")

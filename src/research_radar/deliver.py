@@ -12,11 +12,13 @@ scan and a successful one is never repeated.
 from __future__ import annotations
 
 import os
+import re
 import smtplib
 import ssl
+import time
 from dataclasses import dataclass
 from datetime import date as date_type
-from datetime import timedelta
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from pathlib import Path
@@ -25,13 +27,26 @@ from typing import Any
 import httpx
 
 from . import __version__
+from .candidates import CandidateStore, StoreError
 from .config import Config
-from .digest import Digest, render_html, render_telegram, render_text
+from .digest import (
+    Digest,
+    TelegramMessage,
+    keyboard_for_hash,
+    render_html,
+    render_telegram,
+    render_text,
+    vote_hash,
+)
 from .models import Report
 from .store import Store
 
 CHANNELS = ("email", "telegram")
 TELEGRAM_API = "https://api.telegram.org"
+TELEGRAM_PAUSE = 1.0  # seconds between two messages of one digest
+VOTE_DATA = re.compile(r"^v1([+-])([0-9a-f]{16})$")
+UPDATE_PAGE = 100
+UPDATE_CALLS = 10
 
 
 class DeliveryError(Exception):
@@ -262,15 +277,31 @@ def telegram_chat_id(cfg: Config) -> str:
     return chat
 
 
-def send_telegram(cfg: Config, messages: list[str]) -> None:
+def _send_message(token: str, chat: str, message: TelegramMessage) -> None:
+    payload: dict[str, Any] = {
+        "chat_id": chat,
+        "text": message.text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if not message.sound:
+        payload["disable_notification"] = True
+    if message.keyboard:
+        payload["reply_markup"] = {"inline_keyboard": message.keyboard}
+    _telegram_call(token, "sendMessage", payload)
+
+
+def send_telegram(cfg: Config, messages: list[TelegramMessage], on_sent: Any = None) -> None:
+    """Send the messages in order, at least TELEGRAM_PAUSE apart. `on_sent(message)` runs after
+    each one, so the caller can record what was delivered before a later message fails."""
     token = telegram_token(cfg)
     chat = telegram_chat_id(cfg)
-    for text in messages:
-        _telegram_call(
-            token,
-            "sendMessage",
-            {"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
-        )
+    for index, message in enumerate(messages):
+        if index:
+            time.sleep(TELEGRAM_PAUSE)
+        _send_message(token, chat, message)
+        if on_sent:
+            on_sent(message)
 
 
 def check_telegram(cfg: Config) -> str:
@@ -295,14 +326,81 @@ def find_telegram_chats(cfg: Config) -> list[tuple[str, str]]:
     return list(found.items())
 
 
+# votes -----------------------------------------------------------------------------------
+
+
+def _read_updates(token: str) -> list[dict[str, Any]]:
+    """Every pending update. Without `offset` and `allowed_updates`, so that `radar telegram-chat`
+    still sees its messages. A full page is followed by the next one, at most UPDATE_CALLS calls."""
+    updates: list[dict[str, Any]] = []
+    payload: dict[str, Any] = {"limit": UPDATE_PAGE}
+    for _ in range(UPDATE_CALLS):
+        page = _telegram_call(token, "getUpdates", payload) or []
+        updates.extend(page)
+        if len(page) < UPDATE_PAGE:
+            break
+        payload = {"limit": UPDATE_PAGE, "offset": max(int(u["update_id"]) for u in page) + 1}
+    return updates
+
+
+def collect_telegram_votes(cfg: Config, candidates: CandidateStore, now: datetime) -> tuple[int, str]:
+    """Record the votes pressed on the buttons of earlier digests: (votes written, a warning or "").
+
+    Run under the scan lock with a store opened for writing and already on disk. Nothing here
+    raises: what cannot be read now is read again by the next run."""
+    if not candidates.write or candidates.create or candidates.schema < 2:
+        return 0, ""
+    try:
+        token = telegram_token(cfg)
+        chat = telegram_chat_id(cfg)
+    except DeliveryError:
+        return 0, ""  # delivery reports a missing token or chat itself
+    try:
+        updates = _read_updates(token)
+        if not updates:
+            return 0, ""
+        urls: dict[str, str] = {}  # hash of a link URL -> item key
+        for key, url in candidates.conn.execute(
+            "SELECT item.key, link.url FROM item JOIN link ON link.key = item.key"
+            " WHERE item.state IN ('shown', 'gone')"
+        ):
+            urls[vote_hash(url)] = key
+        pressed: dict[str, tuple[int, str, int]] = {}  # item key -> (vote, button hash, message id)
+        for update in sorted(updates, key=lambda u: int(u.get("update_id", 0))):
+            query = update.get("callback_query") or {}
+            message = query.get("message") or {}
+            if str((message.get("chat") or {}).get("id", "")) != chat:
+                continue
+            match = VOTE_DATA.match(str(query.get("data") or ""))
+            key = urls.get(match.group(2)) if match else None
+            if not match or not key or "message_id" not in message:
+                continue
+            pressed[key] = (1 if match.group(1) == "+" else -1, match.group(2), int(message["message_id"]))
+        if pressed:
+            candidates.set_votes({k: v[0] for k, v in pressed.items()}, "telegram", now)
+        # Only after the commit are the updates confirmed. A failure above leaves them for the next run.
+        _telegram_call(token, "getUpdates", {"offset": max(int(u["update_id"]) for u in updates) + 1, "limit": 1})
+        for vote, h, message_id in pressed.values():
+            try:
+                _telegram_call(
+                    token,
+                    "editMessageReplyMarkup",
+                    {
+                        "chat_id": chat,
+                        "message_id": message_id,
+                        "reply_markup": {"inline_keyboard": keyboard_for_hash(h, vote)},
+                    },
+                )
+            except DeliveryError:
+                pass  # a failed edit is ignored
+        return len(pressed), ""
+    except (DeliveryError, StoreError) as exc:
+        return 0, f"Could not collect the Telegram votes: {exc}"
+    except Exception as exc:  # a scan must survive anything the collecting code throws
+        return 0, f"Could not collect the Telegram votes ({type(exc).__name__})."
+
+
 # sending ---------------------------------------------------------------------------------
-
-
-def _send(cfg: Config, channel: str, digest: Digest) -> None:
-    if channel == "email":
-        send_email(cfg, digest.subject(), render_text(digest), render_html(digest))
-    else:
-        send_telegram(cfg, render_telegram(digest))
 
 
 def deliver_pending(
@@ -347,10 +445,21 @@ def deliver_pending(
                 result.sent = len(reports)
                 result.dry_run = True
                 continue
-            _send(cfg, channel, build_digest(cfg, store, date, reports))
+            digest = build_digest(cfg, store, date, reports)
             extra = ([_empty_key(today)] if empty_note else []) + ([_alert_key(today)] if alert_due else [])
-            store.mark_delivered(channel, [delivery_key(r) for r in reports] + extra)
-            result.sent = len(reports)
+            if channel == "email":
+                send_email(cfg, digest.subject(), render_text(digest), render_html(digest))
+                store.mark_delivered(channel, [delivery_key(r) for r in reports] + extra)
+                result.sent = len(reports)
+            else:
+
+                def sent(message: TelegramMessage) -> None:
+                    # each item is marked as soon as its message is out; the header carries the day marks
+                    keys = [delivery_key(r) for r in message.reports] + (extra if message.sound else [])
+                    store.mark_delivered(channel, keys)
+                    result.sent += len(message.reports)
+
+                send_telegram(cfg, render_telegram(digest), sent)
             if not reports:
                 result.note = "sent the interests.yaml warning"
         except DeliveryError as exc:
@@ -373,7 +482,7 @@ def send_test(cfg: Config) -> list[DeliveryResult]:
             if channel == "email":
                 send_email(cfg, "Research Radar test message", text + "\n", f"<p>{text}</p>")
             else:
-                send_telegram(cfg, [text])
+                send_telegram(cfg, [TelegramMessage(text, sound=True)])
             result.note = "test message sent"
         except DeliveryError as exc:
             result.error = str(exc)

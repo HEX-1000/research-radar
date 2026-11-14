@@ -105,16 +105,17 @@ def test_rising_item_is_described_by_its_growth():
 def test_telegram_messages_stay_under_the_limit_and_keep_items_whole():
     reports = [report(f"repo-{i}", what="word " * 60, why="reason " * 40, url=f"https://example.org/{i}") for i in range(40)]
     messages = render_telegram(Digest(date="2026-10-27", reports=reports))
-    assert len(messages) > 1
-    assert all(len(m) <= 4000 for m in messages)
-    for m in messages:
-        assert m.count("<a ") == m.count("</a>")
-    assert sum(m.count("repo-") for m in messages) == 40
+    texts = [m.text for m in messages]
+    assert len(messages) == 41  # a header and one message per item
+    assert all(len(t) <= 4000 for t in texts)
+    for t in texts:
+        assert t.count("<a ") == t.count("</a>")
+    assert sum(t.count("repo-") for t in texts) == 40
 
 
 def test_telegram_escapes_markup_in_titles():
     messages = render_telegram(Digest(date="2026-10-27", reports=[report(title="a <b> & c")]))
-    assert "a &lt;b&gt; &amp; c" in messages[0]
+    assert "a &lt;b&gt; &amp; c" in messages[1].text
 
 
 def test_latex_in_titles_is_shown_as_plain_text():
@@ -124,7 +125,7 @@ def test_latex_in_titles_is_shown_as_plain_text():
 
 def test_no_em_dash_in_any_rendering():
     digest = Digest(date="2026-10-27", reports=[report(), report("p", "skip", kind="paper")], warnings=["w"])
-    for output in (render_html(digest), render_text(digest), "".join(render_telegram(digest))):
+    for output in (render_html(digest), render_text(digest), "".join(m.text for m in render_telegram(digest))):
         assert chr(0x2014) not in output
 
 
@@ -273,8 +274,9 @@ def test_the_alert_comes_before_the_items_everywhere():
     page = render_html(digest)
     assert page.index("<b>Action needed:</b>") < page.index(">try-me</a>") and "&lt;here&gt;" in page
     assert "Action needed: fix interests.yaml" in page.split("<table", 1)[0]  # the inbox preview line
-    telegram = render_telegram(digest)[0]
-    assert telegram.index("<b>Action needed:</b> interests.yaml is broken &lt;here&gt;") < telegram.index("try-me")
+    messages = render_telegram(digest)
+    assert "<b>Action needed:</b> interests.yaml is broken &lt;here&gt;" in messages[0].text
+    assert "try-me" not in messages[0].text and "try-me" in messages[1].text
 
 
 def make_cfg_quiet(cfg):
@@ -349,7 +351,7 @@ def test_telegram_message_is_sent_in_html_mode(make_cfg, http_factory, telegram)
     sent = [c for c in calls if c.url.path.endswith("/sendMessage")]
     body = json.loads(sent[0].content)
     assert body["chat_id"] == "42" and body["parse_mode"] == "HTML" and body["disable_web_page_preview"] is True
-    assert "alice/local-llm-kit" in body["text"]
+    assert "alice/local-llm-kit" in "".join(json.loads(c.content)["text"] for c in sent)
     assert sent[0].url.path == f"/bot{TOKEN}/sendMessage"
 
 
@@ -522,5 +524,5 @@ def test_repeated_failed_searches_become_one_note():
 
 def test_telegram_notes_are_in_code_tags_so_hosts_are_not_linked():
     digest = Digest(date="2026-10-27", reports=[report()], warnings=["github: query 'x': api.github.com: HTTP 403"])
-    text = "".join(render_telegram(digest))
+    text = "".join(m.text for m in render_telegram(digest))
     assert "<code>github: 1 search failed (x): api.github.com: HTTP 403</code>" in text

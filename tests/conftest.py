@@ -202,6 +202,13 @@ def make_handler(calls: list[str] | None = None, fail: set[str] | None = None, r
 
 
 @pytest.fixture(autouse=True)
+def no_pause_between_telegram_messages(monkeypatch):
+    from research_radar import deliver
+
+    monkeypatch.setattr(deliver, "TELEGRAM_PAUSE", 0)
+
+
+@pytest.fixture(autouse=True)
 def ollama_has_every_model(monkeypatch):
     """The interface asks Ollama for its models on start. Tests never reach a real Ollama."""
     from research_radar import tui

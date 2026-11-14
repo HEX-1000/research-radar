@@ -123,7 +123,7 @@ Secrets are never written to that file. It names an environment variable, and th
 
 **Email.** Any SMTP server works. For Gmail, turn on two-step verification, create an app password, and put it in the variable named by `password_env` (`RADAR_SMTP_PASSWORD` by default). The mail has an HTML part and a plain text part.
 
-**Telegram.** Create a bot with [@BotFather](https://t.me/BotFather), put its token in `RADAR_TELEGRAM_TOKEN`, open the bot, press Start and send it any text. Then run `radar telegram-chat` to see your chat id and put it in `delivery.telegram.chat_id`.
+**Telegram.** Create a bot with [@BotFather](https://t.me/BotFather), put its token in `RADAR_TELEGRAM_TOKEN`, open the bot, press Start and send it any text. Then run `radar telegram-chat` to see your chat id and put it in `delivery.telegram.chat_id`. A digest arrives as a header (with sound) and one silent message per item, each with `+` and `-` buttons. A vote is recorded at the next scan; after that the button shows a check mark. Votes count like the ones given in the interface, and the last press on an item wins.
 
 ```
 radar send --test       # one short test message through each enabled channel

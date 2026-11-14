@@ -10,6 +10,7 @@ is escaped before it goes into HTML, and only http and https links are made clic
 
 from __future__ import annotations
 
+import hashlib
 import html
 import re
 from dataclasses import dataclass, field
@@ -224,14 +225,54 @@ def _telegram_item(report: Report) -> str:
     return "\n".join(lines)
 
 
-def render_telegram(digest: Digest) -> list[str]:
-    """Telegram messages in HTML mode, split at item boundaries to stay under the length limit."""
-    blocks = [f"<b>Research Radar</b> · {_tg(long_date(digest.date))}\n{_tg(digest.summary_line())}"]
+@dataclass
+class TelegramMessage:
+    """One Telegram message: its HTML text, the reports it delivers, an optional vote keyboard."""
+
+    text: str
+    reports: list[Report] = field(default_factory=list)  # delivered once this message is sent
+    keyboard: list[list[dict[str, str]]] | None = None
+    sound: bool = False  # only the header makes a sound
+
+
+def vote_hash(url: str) -> str:
+    """The first 16 hex digits of the SHA-1 of a report's URL, as it goes into `callback_data`."""
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+
+
+def keyboard_for_hash(h: str, chosen: int = 0) -> list[list[dict[str, str]]]:
+    """One row with `+` and `-`; the chosen one reads `+ ✓` or `- ✓`."""
+    return [
+        [
+            {"text": "+ ✓" if chosen > 0 else "+", "callback_data": "v1+" + h},
+            {"text": "- ✓" if chosen < 0 else "-", "callback_data": "v1-" + h},
+        ]
+    ]
+
+
+def vote_keyboard(url: str, chosen: int = 0) -> list[list[dict[str, str]]]:
+    return keyboard_for_hash(vote_hash(url), chosen)
+
+
+def _cut(block: str) -> str:
+    if len(block) > TELEGRAM_LIMIT:
+        return block[: TELEGRAM_LIMIT - 20].rsplit("\n", 1)[0] + "\n(cut)"
+    return block
+
+
+def render_telegram(digest: Digest) -> list[TelegramMessage]:
+    """The digest as Telegram messages in HTML mode: a header, one message per item with a vote
+    keyboard, and one with the items that probably do not fit and the notes."""
+    header = [f"<b>Research Radar</b> · {_tg(long_date(digest.date))}\n{_tg(digest.summary_line())}"]
     if digest.alert:
-        blocks.append(f"<b>Action needed:</b> {_tg(digest.alert)}")
+        header.append(f"<b>Action needed:</b> {_tg(digest.alert)}")
+    messages = [TelegramMessage(_cut("\n\n".join(header)), sound=True)]
     for name, entries in digest.groups():
-        blocks.append(f"<b>{_tg(name)}</b> ({len(entries)})")
-        blocks.extend(_telegram_item(r) for r in entries)
+        for report in entries:
+            text = f"<i>{_tg(name)}</i>\n{_telegram_item(report)}"
+            link = safe_url(report.url)
+            messages.append(TelegramMessage(_cut(text), [report], vote_keyboard(report.url) if link else None))
+    blocks = []
     also = digest.also_matched
     if also:
         rows = []
@@ -244,19 +285,8 @@ def render_telegram(digest: Digest) -> list[str]:
     if notes:
         # <code> keeps Telegram from turning host names such as api.github.com into links
         blocks.append("Notes:\n" + "\n".join("- <code>" + _tg(n) + "</code>" for n in notes))
-
-    messages: list[str] = []
-    current = ""
-    for block in blocks:
-        if len(block) > TELEGRAM_LIMIT:
-            block = block[: TELEGRAM_LIMIT - 20].rsplit("\n", 1)[0] + "\n(cut)"
-        if current and len(current) + 2 + len(block) > TELEGRAM_LIMIT:
-            messages.append(current)
-            current = block
-        else:
-            current = f"{current}\n\n{block}" if current else block
-    if current:
-        messages.append(current)
+    if blocks:
+        messages.append(TelegramMessage(_cut("\n\n".join(blocks)), list(also)))
     return messages
 
 

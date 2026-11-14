@@ -12,7 +12,7 @@ from typing import Callable
 
 from .candidates import CandidateStore, ScanRecord, StoredItem
 from .config import Config, Topic
-from .deliver import DeliveryResult, deliver_pending, write_digest_file
+from .deliver import DeliveryResult, collect_telegram_votes, deliver_pending, write_digest_file
 from .digest import MONTHS
 from .http import Http, SourceError
 from .llm import Ollama, OllamaError
@@ -142,6 +142,12 @@ def _scan(
     last_runs = store.last_runs()
     model = str(cfg.settings["embed_model"])
     record = ScanRecord(now=now, day=local_date, embed_model=model)
+
+    # Votes pressed on Telegram buttons since the last scan count in this scan's ranking.
+    if cfg.channel_enabled("telegram"):
+        _, vote_warning = collect_telegram_votes(cfg, candidates, now)
+        if vote_warning:
+            result.warnings.append(vote_warning)
 
     # Topics that are new or were edited since the last scan get a one time look back, because
     # the window of a source only reaches back to the last scan. The first scan after the

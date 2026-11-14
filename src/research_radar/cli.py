@@ -151,6 +151,24 @@ def _ollama_names(cfg: Config) -> list[str] | None:
         client.close()
 
 
+def _collect_votes_when_skipped(cfg: Config) -> None:
+    """Telegram keeps updates for 24 hours, so a skipped day must not lose the votes pressed in it."""
+    from .candidates import DB_NAME, CandidateStore, StoreError
+    from .deliver import collect_telegram_votes
+    from .lock import ScanLocked, scan_lock
+
+    if not cfg.channel_enabled("telegram") or not (cfg.state_dir / DB_NAME).exists():
+        return
+    try:
+        now = datetime.now(timezone.utc)
+        with scan_lock(cfg.state_dir):
+            with CandidateStore.open(cfg.state_dir, embed_model=str(cfg.settings["embed_model"]), now=now) as candidates:
+                count, warning = collect_telegram_votes(cfg, candidates, now)
+        print(warning or f"Telegram votes recorded: {count}", flush=True)
+    except (ScanLocked, StoreError) as exc:
+        print(f"Telegram votes not collected: {exc}", flush=True)
+
+
 def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, explain: bool, sleep=time.sleep) -> int:
     """The scan the daily task runs. Everything it prints goes to <data home>/logs/scan.log,
     because pythonw has no console. It does not scan when Ollama or the embedding model is
@@ -178,6 +196,7 @@ def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, exp
                 for text, _ in advice:
                     print(text)
                 print("No scan was run. The next scan collects what was missed.", flush=True)
+                _collect_votes_when_skipped(cfg)
                 code = EXIT_SKIPPED
             else:
                 code = cmd_scan(cfg, days, no_llm, explain, scheduled=True)
