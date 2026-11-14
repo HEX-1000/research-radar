@@ -64,6 +64,8 @@ sources:
   huggingface-models:
     enabled: true
     limit: 25
+  feeds:               # Atom and RSS; reads nothing until a topic lists a feed (see the topics below)
+    enabled: true
   forgejo:             # Codeberg and any Gitea or Forgejo server share one API
     enabled: true
     instances: [codeberg.org]
@@ -81,6 +83,14 @@ topics:
     # match the start of a word (retrieval also finds retrievals).
     keywords: [ollama, local llm, embeddings, retrieval, mcp, sqlite fts]
     exclude: [crypto trading bot]
+    # Optional: feeds. `watch` shows what appears there without a bar (GitHub owner/name means its
+    # releases feed; a repository without releases needs its .../commits.atom URL). `feeds: urls:`
+    # lists blogs whose posts are scored like any other item.
+    # watch:
+    #   - ollama/ollama
+    #   - https://github.com/ggml-org/llama.cpp/commits.atom
+    # feeds:
+    #   urls: [https://example.org/blog/feed.xml]
     # Optional, per topic: min_score and max_per_topic replace the values under settings for this
     # topic only (max_per_topic: 0 hides it). Leave them out until `radar scan --explain` shows a need.
     github:

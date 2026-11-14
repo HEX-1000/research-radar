@@ -53,8 +53,8 @@ def plain_title(title: str) -> str:
 class Item:
     """One thing a source found: a repository, a paper or a model."""
 
-    source: str  # github, arxiv, huggingface-papers, huggingface-models, forgejo
-    kind: str  # repo, paper or model
+    source: str  # github, arxiv, huggingface-papers, huggingface-models, forgejo, feeds
+    kind: str  # repo, paper, model, release (a watched feed) or article (a feed's post)
     title: str
     url: str
     text: str = ""
@@ -68,7 +68,12 @@ class Item:
     @property
     def key(self) -> str:
         """The item's key in the candidate store: the same paper from arXiv and from Hugging Face
-        has one key, see key_from_url."""
+        has one key, see key_from_url. An entry of a feed has the key of its own id: the URL of a
+        release such as github.com/owner/name/releases/tag/v1 would otherwise give the key of the
+        repository, and every later release would count as already shown."""
+        entry_id = self.meta.get("entry_id")
+        if self.source == "feeds" and isinstance(entry_id, str) and entry_id.strip():
+            return "feed:" + entry_id.strip()
         arxiv_id = self.meta.get("arxiv_id") if self.kind == "paper" else None
         if isinstance(arxiv_id, str) and arxiv_id.strip():
             return "arxiv:" + _arxiv_id(arxiv_id)

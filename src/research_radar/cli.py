@@ -330,7 +330,7 @@ def _probe(label: str, fn) -> bool:
 
 
 def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
-    from .sources import arxiv, forgejo, github, huggingface
+    from .sources import arxiv, feeds, forgejo, github, huggingface
 
     results: list[bool] = []
     if cfg.problem:
@@ -431,6 +431,12 @@ def cmd_doctor(cfg: Config, local_only: bool = False) -> int:
                     return f"read {items[0].url} ({f'token from {env}' if token else 'no token'})"
 
                 results.append(_probe(f"forgejo ({instance})", probe_forgejo))
+        if cfg.source_enabled("feeds"):
+            for ref in feeds.configured(cfg):
+                def probe_feed(ref=ref) -> str:
+                    return feeds.describe_feed(feeds.read_feed(http, ref.url), ref.url)
+
+                results.append(_probe(f"feeds ({ref.label or ref.url})", probe_feed))
     finally:
         http.close()
     from .deliver import check_email, check_telegram

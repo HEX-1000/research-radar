@@ -7,6 +7,7 @@ what makes an update reach everyone.
 
 ## Unreleased
 
+- A new `feeds` source reads Atom and RSS. A topic's `watch` list names GitHub repositories (`owner/name`, read through their releases feed) or feed URLs; what appears there is shown under that topic without a bar and outside `max_items` and `max_per_topic`, at most one item per feed and scan, with "and N earlier entries since ..." when there were more. A topic's `feeds: urls:` lists blogs whose posts are scored like any other item. `radar doctor` reads every feed once.
 - `radar label` also asks about GitHub repositories whose only signal is a `-` vote, and `radar replay` names the repositories behind "others caught" and "lures not caught".
 - Telegram votes are saved page by page, so a failure while reading a later page no longer loses the votes of an earlier one.
 - Telegram sends one message per item, each with `+` and `-` buttons. A vote is recorded at the next scan (also at a skipped scheduled scan) and the button then shows a check mark. Only the first message of a digest makes a sound, and an item counts as delivered as soon as its message is sent.

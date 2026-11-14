@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -38,6 +40,7 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
     "arxiv": {"enabled": True, "max_results": 100},
     "huggingface-papers": {"enabled": True},
     "huggingface-models": {"enabled": True, "limit": 25},
+    "feeds": {"enabled": True},  # reads nothing until a topic lists a feed (`watch`, `feeds.urls`)
     "forgejo": {
         "enabled": True,
         "instances": ["codeberg.org"],
@@ -49,7 +52,7 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
 }
 
 SOURCE_KEYS = tuple(DEFAULT_SOURCES)
-TOPIC_KEYS = ("name", "description", "keywords", "exclude", "min_score", "max_per_topic") + SOURCE_KEYS
+TOPIC_KEYS = ("name", "description", "keywords", "exclude", "min_score", "max_per_topic", "watch") + SOURCE_KEYS
 
 # Secrets never go in this file. The settings name the environment variable that holds them.
 DEFAULT_DELIVERY: dict[str, Any] = {
@@ -74,6 +77,10 @@ DEFAULT_DELIVERY: dict[str, Any] = {
 }
 
 
+# A GitHub repository in a watch list: owner/name, letters, digits, dot, underscore and hyphen.
+GITHUB_NAME = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+
+
 class ConfigError(Exception):
     """interests.yaml is missing or does not make sense."""
 
@@ -87,6 +94,7 @@ class Topic:
     options: dict[str, dict[str, Any]] = field(default_factory=dict)  # per source
     min_score: float | None = None  # this topic's bar; None means the value under settings
     max_per_topic: int | None = None  # this topic's cap; None means the value under settings
+    watch: list[str] = field(default_factory=list)  # GitHub owner/name or feed URLs, shown without a bar
 
     def source_option(self, source: str, key: str, default: Any = None) -> Any:
         return self.options.get(source, {}).get(key, default)
@@ -216,6 +224,32 @@ def _topic_cap(value: Any, name: str) -> int | None:
     return value
 
 
+def _web_address(value: str) -> bool:
+    parts = urlsplit(value)
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+def _topic_watch(value: Any, name: str) -> list[str]:
+    """The `watch` entries: GitHub owner/name or an http(s) feed URL."""
+    entries = [e.strip() for e in _as_list(value, f"topic '{name}' watch")]
+    for entry in entries:
+        if not (GITHUB_NAME.match(entry) or _web_address(entry)):
+            raise ConfigError(
+                f"topic '{name}': watch entry {entry!r} is neither a GitHub owner/name nor an http(s) feed URL"
+            )
+    return entries
+
+
+def _topic_feed_urls(options: dict[str, dict[str, Any]], name: str) -> None:
+    """`feeds: urls:` must be a list of http(s) URLs; a wrong entry would fail at every scan."""
+    urls = options.get("feeds", {}).get("urls")
+    if urls is None:
+        return
+    for url in _as_list(urls, f"topic '{name}' feeds.urls"):
+        if not _web_address(url.strip()):
+            raise ConfigError(f"topic '{name}': feeds.urls entry {url!r} is not an http(s) URL")
+
+
 def _unknown(notices: list[str], what: str, keys: list[str], known: Any) -> None:
     for key in keys:
         notices.append(f"interests.yaml: unknown {what.format(key=key)} was ignored (known: {', '.join(known)})")
@@ -261,8 +295,9 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
         seen_names.add(name)
         _unknown(notices, "option '{key}' in topic '" + name + "'", [k for k in raw if k not in TOPIC_KEYS], TOPIC_KEYS)
         options = {k: (raw[k] or {}) for k in SOURCE_KEYS if isinstance(raw.get(k), dict)}
-        # Short names in the file: github, arxiv, forgejo. Hugging Face sources have
+        # Short names in the file: github, arxiv, forgejo, feeds. Hugging Face sources have
         # no per-topic options, they match by text.
+        _topic_feed_urls(options, name)
         topics.append(
             Topic(
                 name=name,
@@ -272,6 +307,7 @@ def parse_config(data: dict[str, Any], home: Path) -> Config:
                 options=options,
                 min_score=_topic_min_score(raw.get("min_score"), name),
                 max_per_topic=_topic_cap(raw.get("max_per_topic"), name),
+                watch=_topic_watch(raw.get("watch"), name),
             )
         )
 

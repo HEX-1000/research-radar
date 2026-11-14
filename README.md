@@ -161,6 +161,7 @@ Without the Task Scheduler, `radar scan` does the same work from the command lin
 | `arxiv` | the official Atom API, one query per topic | Requests are spaced about 3 seconds apart, as arXiv asks. |
 | `huggingface-papers` | the daily papers list for each day in the window | |
 | `huggingface-models` | currently trending models | Matches on tags only, so it is the noisiest source. |
+| `feeds` | Atom and RSS feeds that a topic lists under `watch` or `feeds: urls:` | Reads nothing until a topic lists a feed, see below. |
 | `forgejo` | repository search on Codeberg or any Gitea or Forgejo server | Since November 2026 Codeberg refuses searches without an access token (HTTP 429), so it needs a free account and a token, see below. Add servers under `sources.forgejo.instances`. |
 
 **A Codeberg token.** Create a free account on [codeberg.org](https://codeberg.org), open Settings, Applications, and generate a token with access to public repositories only and the permission "repository: Read". Put it in the environment variable `RADAR_CODEBERG_TOKEN`. On Windows, in PowerShell:
@@ -170,6 +171,21 @@ Without the Task Scheduler, `radar scan` does the same work from the command lin
 ```
 
 `"User"` stays as written: it means your Windows account. Open Research Radar again afterwards, so it sees the variable. `radar doctor` says whether the token is used. The token is sent only to Codeberg. For another Forgejo or Gitea server, name its variable under `sources.forgejo.token_env`, for example `git.example.org: MY_GITEA_TOKEN`. Without a token the scan asks Codeberg once, skips it when it refuses, and collects the gap once a token is set, up to `max_catchup_days`.
+
+**A watch list.** Under a topic, `watch` names things you want to hear about whenever they change, without a score bar:
+
+```yaml
+topics:
+  - name: Decompilation tools
+    description: ...
+    watch:
+      - NationalSecurityAgency/ghidra                        # GitHub owner/name: its releases feed
+      - https://github.com/matt-kempster/m2c/commits.atom    # or any Atom or RSS feed
+    feeds:
+      urls: [https://example.org/blog/feed.xml]              # posts, scored like any other item
+```
+
+`owner/name` means the releases feed of that repository. A repository without releases has an empty releases feed, so watch its `commits.atom` instead; `radar doctor` says "no entries" for such a feed and shows the address to use. A watched feed shows at most one item per scan, its newest entry, and adds "and N earlier entries since 2 October" when more came in. These items skip the bar and are not counted against `max_items` or `max_per_topic`. A short release text (under 200 characters) gets a fixed note instead of one from the model. Posts from `feeds: urls:` go through scoring and the caps like papers and repositories. A topic that gains a watch entry looks back `first_run_days` days for it, like any edited topic. A feed larger than 2 MB, or one that declares XML entities, is skipped with a warning, and a feed that fails keeps the window of the `feeds` source open until it works.
 
 Each source is a small module in `src/research_radar/sources/`. A source takes the date window and your topics and returns a list of items, so adding one is a short file. Pull requests are welcome.
 

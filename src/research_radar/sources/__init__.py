@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable
 
 from ..models import Item
-from . import arxiv, forgejo, github, huggingface
+from . import arxiv, feeds, forgejo, github, huggingface
 from .base import FetchContext
 
 SOURCES: dict[str, Callable[[FetchContext], list[Item]]] = {
@@ -14,6 +14,7 @@ SOURCES: dict[str, Callable[[FetchContext], list[Item]]] = {
     "huggingface-papers": huggingface.fetch_papers,
     "huggingface-models": huggingface.fetch_models,
     "forgejo": forgejo.fetch,
+    "feeds": feeds.fetch,
 }
 
 __all__ = ["SOURCES", "FetchContext"]

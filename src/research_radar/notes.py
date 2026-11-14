@@ -2,14 +2,30 @@
 
 from __future__ import annotations
 
+from datetime import date as date_type
 from pathlib import Path
 
 from .config import Config
 from .models import Report, SkippedSource, plain_title
 
 
+MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
 def _count(value: object) -> str | None:
     return f"{value:,}" if isinstance(value, int) else None
+
+
+def _day_month(iso: str) -> str:
+    """2026-10-02 as "2 October"; empty when it cannot be read."""
+    try:
+        day = date_type.fromisoformat(iso[:10])
+    except ValueError:
+        return ""
+    return f"{day.day} {MONTHS[day.month - 1]}"
 
 
 def meta_line(report: Report) -> str:
@@ -29,6 +45,12 @@ def meta_line(report: Report) -> str:
         upvotes = _count(meta.get("upvotes"))
         if upvotes:
             parts.append(f"{upvotes} upvotes")
+    elif report.kind == "release":
+        earlier = meta.get("earlier_entries")
+        if isinstance(earlier, int) and earlier > 0:
+            noun = "entry" if earlier == 1 else "entries"
+            since = _day_month(str(meta.get("earlier_since") or ""))
+            parts.append(f"and {earlier} earlier {noun} since {since}" if since else f"and {earlier} earlier {noun}")
     elif report.kind == "model":
         if meta.get("task"):
             parts.append(str(meta["task"]))

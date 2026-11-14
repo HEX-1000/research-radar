@@ -22,10 +22,11 @@ from .notes import write_note
 from .ranker import Ranking, Scored, rank, select
 from .sources import SOURCES, FetchContext
 from .sources.arxiv import NAME as ARXIV, OVERLAP_DAYS as ARXIV_OVERLAP_DAYS
+from .sources.feeds import fold_earlier
 from .sources.github import HOLD_DAYS, check_repos, fetch_readme, fetch_repo, parse_repo, thin_reason
 from .sources.github import GONE as GITHUB_GONE
 from .store import Store
-from .summarize import fallback_note, summarize
+from .summarize import WATCH_MIN_TEXT, fallback_note, summarize, watch_note
 
 Progress = Callable[[str], None]
 
@@ -78,6 +79,8 @@ def window_start(
 def topic_fingerprint(topic: Topic) -> str:
     """Changes when the text of a topic or its per source queries change."""
     payload = [topic.description.strip(), topic.keywords, topic.exclude, topic.options]
+    if topic.watch:  # appended only when set, so topics without a watch list keep their marks
+        payload.append(topic.watch)
     text = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
@@ -193,6 +196,8 @@ def _scan(
             ctx = FetchContext(config=back_cfg, http=http, since=back_start, until=windows[name])
             try:
                 for item in fetch(ctx):
+                    if _fold_into_watched(record, item):
+                        continue  # the feed already has this scan's item; this entry is an earlier one
                     if record.add(item):
                         only_for_new.add(item.key)
             except SourceError:
@@ -217,6 +222,11 @@ def _scan(
             item = record.items[key] = replace(item, url=row.url)  # the link shown is the first one stored
         if row is None or row.state == "seen":
             fresh[key] = item
+
+    # Entries of a watched feed are shown without a bar: they skip ranking and selection.
+    watched = [item for item in fresh.values() if item.meta.get("watch_topic")]
+    for item in watched:
+        del fresh[item.key]
 
     # Repositories held back a week ago are asked about again; one that is not thin joins the
     # candidates of this scan and competes for every topic.
@@ -303,6 +313,16 @@ def _scan(
         hold=hold,
     )
     result.explain = scored[:30]
+    # Watched entries come first and take no place under max_items or max_per_topic.
+    by_name = {t.name: t for t in cfg.topics}
+    watch_entries = [
+        Scored(item, by_name[item.meta["watch_topic"]], 0.0, selected=True, outcome="watch")
+        for item in watched
+        if item.meta["watch_topic"] in by_name
+    ]
+    for entry in watch_entries:
+        record.decide(entry.item.key, entry.topic.name, 0.0, "watch")
+    shown_entries = watch_entries + chosen
     # A rechecked repository that was not chosen is an ordinary candidate again; the choice was
     # made like any other.
     for key in cleared:
@@ -323,9 +343,9 @@ def _scan(
     if result.ranking == "keywords":
         # A preview: the items are chosen and described as always, but nothing is saved or sent.
         result.preview = True
-        for entry in chosen:
+        for entry in shown_entries:
             item = entry.item
-            what, why, verdict = fallback_note(item, entry.topic)
+            what, why, verdict = _note_without_model(entry)
             result.new_reports.append(
                 Report(
                     date=local_date,
@@ -348,14 +368,16 @@ def _scan(
 
     # 3. Describe the chosen items ------------------------------------------------------
     language = str(cfg.settings["summary_language"])
-    for number, entry in enumerate(chosen, start=1):
+    for number, entry in enumerate(shown_entries, start=1):
         item = entry.item
-        progress(f"Writing note {number}/{len(chosen)}: {item.title}")
+        progress(f"Writing note {number}/{len(shown_entries)}: {item.title}")
         source_text = item.text
         if item.source == "github" and item.meta.get("full_name"):
             readme = fetch_readme(http, item.meta["full_name"])
             source_text = f"{item.text}\n\n{readme}".strip() if readme else item.text
-        if llm_ready:
+        if entry.outcome == "watch" and len(item.text.strip()) < WATCH_MIN_TEXT:
+            what, why, verdict = watch_note(item)
+        elif llm_ready:
             what, why, verdict = summarize(ollama, item, entry.topic, source_text, language)
         else:
             what, why, verdict = fallback_note(item, entry.topic)
@@ -412,6 +434,25 @@ def _scan(
         result.warnings.append(f"Could not write the digest file ({type(exc).__name__}).")
     progress(f"Done: {len(result.new_reports)} new items")
     return result
+
+
+def _note_without_model(entry: Scored) -> tuple[str, str, str]:
+    if entry.outcome == "watch" and len(entry.item.text.strip()) < WATCH_MIN_TEXT:
+        return watch_note(entry.item)
+    return fallback_note(entry.item, entry.topic)
+
+
+def _fold_into_watched(record: ScanRecord, item: Item) -> bool:
+    """A watched feed gives one item per scan. When the look back for an edited topic finds an
+    older entry of a feed the scan already has an item for, count it there. True when it was counted."""
+    feed = item.meta.get("watch_topic") and item.meta.get("feed")
+    if not feed:
+        return False
+    for kept in record.items.values():
+        if kept.source == item.source and kept.meta.get("watch_topic") and kept.meta.get("feed") == feed:
+            fold_earlier(kept, item)
+            return True
+    return False
 
 
 def _add_rising(

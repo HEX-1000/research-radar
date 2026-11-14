@@ -83,6 +83,16 @@ def fallback_note(item: Item, topic: Topic) -> tuple[str, str, str]:
     return what, why, default_verdict(item.kind)
 
 
+WATCH_MIN_TEXT = 200  # a watched release with less text than this gets a fixed note, not a model's
+
+
+def watch_note(item: Item) -> tuple[str, str, str]:
+    """The note for a watched release whose text is too short for a model to say anything about."""
+    label = str(item.meta.get("label") or "")
+    entry_title = item.title.removeprefix(f"{label}: ") if label else item.title
+    return f"New release {entry_title} of {label}.", f"You watch {label} under this topic.", "watch"
+
+
 def _clean_sentence(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
