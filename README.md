@@ -227,6 +227,10 @@ pytest
 
 Tests run offline with fake sources and a fake Ollama. GitHub runs them on Windows and Linux for every push (`.github/workflows/tests.yml`). Because a new version number reaches every user who has automatic updates on, add an entry to `CHANGELOG.md` and raise `__version__` only for a commit that passes.
 
+## Support
+
+Research Radar is free and has no paid features. If it is useful to you and you want to support the work, you can do it through [Buy Me a Coffee](https://buymeacoffee.com/hex.1000). The Sponsor button at the top of the repository page opens the same link.
+
 ## License
 
 MIT. See `LICENSE`.
