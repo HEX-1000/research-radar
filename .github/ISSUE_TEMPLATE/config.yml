@@ -3,3 +3,6 @@ contact_links:
   - name: Questions and ideas
     url: https://github.com/HEX-1000/research-radar/discussions/categories/q-a
     about: Ask about installing and using Research Radar, or suggest a source or a feature, in Discussions.
+  - name: Report a vulnerability privately
+    url: https://github.com/HEX-1000/research-radar/security/advisories/new
+    about: Do not open a public issue for a security problem. Use a private advisory.
