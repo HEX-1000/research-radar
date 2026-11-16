@@ -115,23 +115,30 @@ def fetch(ctx: FetchContext) -> list[Item]:
 
 GONE = (404, 410, 451)  # deleted, or taken down for legal reasons
 
-# A repository is "thin" when it is small, already has stars and comes from an account nobody
-# follows: the mark of a lure that bought its stars. The numbers come from the scan results of
-# 2026-11-13 (see DECISIONS-2026-11-13.md); they are constants, not settings.
+# A repository is "thin" when it is small and comes from an account nobody follows: the mark of a
+# lure that bought its stars. With THIN_MIN_STARS stars or more the owner may have up to
+# THIN_MAX_FOLLOWERS followers; with fewer stars the owner must have none (decision 56). The numbers
+# come from the scans of 2026-11-13 and 2026-11-16 (see the DECISIONS files); they are constants,
+# not settings.
 THIN_MAX_KB = 200
 THIN_MIN_STARS = 10
 THIN_MAX_FOLLOWERS = 2
+THIN_MAX_FOLLOWERS_FEW_STARS = 0
 HOLD_DAYS = 7
 
 
-def looks_thin(size_kb: int | None, stars: int | None) -> bool:
-    """The two conditions that need no extra request. An unknown size is not thin."""
-    return (
-        isinstance(size_kb, int)
-        and isinstance(stars, int)
-        and size_kb < THIN_MAX_KB
-        and stars >= THIN_MIN_STARS
-    )
+def looks_thin(size_kb: int | None) -> bool:
+    """The condition that needs no extra request: a known size under THIN_MAX_KB. Stars do not
+    matter here; they only set the follower limit (see `follower_limit`)."""
+    return isinstance(size_kb, int) and size_kb < THIN_MAX_KB
+
+
+def follower_limit(stars: int | None) -> int | None:
+    """The most followers an owner of a small repository may have and still be held, or None when
+    the star count is unknown (then the repository is not thin)."""
+    if not isinstance(stars, int):
+        return None
+    return THIN_MAX_FOLLOWERS if stars >= THIN_MIN_STARS else THIN_MAX_FOLLOWERS_FEW_STARS
 
 
 def owner_followers(http: Http, login: str | None, cache: dict[str, int | None]) -> int | None:
@@ -153,10 +160,11 @@ def thin_reason(
     http: Http, size_kb: int | None, stars: int | None, owner: str | None, cache: dict[str, int | None]
 ) -> str | None:
     """Why a repository is held back, or None. A failed request about the owner counts as thin."""
-    if not looks_thin(size_kb, stars):
+    limit = follower_limit(stars)
+    if not looks_thin(size_kb) or limit is None:
         return None
     followers = owner_followers(http, owner, cache)
-    if followers is not None and followers > THIN_MAX_FOLLOWERS:
+    if followers is not None and followers > limit:
         return None
     who = "owner with unknown followers" if followers is None else (
         f"owner with {followers} follower" + ("" if followers == 1 else "s")

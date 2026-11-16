@@ -18,7 +18,7 @@ from .llm import OllamaError
 from .models import Item
 from .pipeline import topic_fingerprint
 from .ranker import LABEL_BAND, cosine, keyword_hits
-from .sources.github import THIN_MAX_FOLLOWERS, looks_thin
+from .sources.github import follower_limit, looks_thin
 
 POOL_OUTCOMES = ("shown", "below_bar", "topic_full", "day_full", "held")
 NO_STORE = "No candidate store yet. Run a scan first."
@@ -293,11 +293,12 @@ def _trust_class(row: tuple | None) -> str:
     if row is None:
         return "no observation"
     size_kb, stars, followers = row
-    if not looks_thin(size_kb, stars):
+    limit = follower_limit(stars)
+    if not looks_thin(size_kb) or limit is None:
         return "not caught"
     if followers is None:
         return "unknown"  # the follower count was never asked
-    return "caught" if followers <= THIN_MAX_FOLLOWERS else "not caught"
+    return "caught" if followers <= limit else "not caught"
 
 
 def _trust(store: CandidateStore, lures: set[str], others: set[str], minus_only: set[str]) -> TrustReplay:

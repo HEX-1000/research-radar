@@ -277,6 +277,39 @@ def test_repositories_that_offer_cracked_software_are_dropped():
     assert set(ranking.left_out.values()) == {"lure"}
 
 
+def _tagged(name: str, *topics: str, kind: str = "repo") -> Item:
+    return Item("github", kind, name, "https://x/1", f"A tool. Topics: {', '.join(topics)}", meta={"topics": list(topics)})
+
+
+def test_two_selling_endings_on_one_stem_are_a_lure():
+    nvidia = _tagged("speedy/nvidia-broadcast-desktop", "nvidia-broadcast-activated", "nvidia-broadcast-download", "nvidia-broadcast-free")
+    mixed = _tagged("x/tool", "tool-crack", "tool_download")  # "-" and "_" both separate the ending
+    from_text = Item("hf", "model", "x/m", "https://x/2", "A model. Tags: m-free, m-download")  # tags read from the text
+    assert ranker.is_lure(nvidia) and ranker.is_lure(mixed) and ranker.is_lure(from_text)
+    assert not ranker.is_lure(_tagged("x/tool", "tool-download", "tool-downloads"))  # one ending in two spellings
+
+
+def test_one_ending_or_endings_on_different_stems_are_not_a_lure():
+    honest = [
+        _tagged("a/x", "api-free", "api-key"),
+        _tagged("a/x", "ad-free", "one-click-download"),
+        _tagged("a/x", "voice-activated", "ai-writing-assistant-free"),
+        _tagged("a/x", "mit-license", "file-download"),
+        _tagged("a/x", "youtube-download", "youtube-downloader-free"),
+        _tagged("desirebulltap/DaVinci-Resolve-Professional-Video-Editing", "resolve-studio-download", "video-editing-free"),
+        _tagged("a/x", "dependency-free", "dependency-free"),  # the same ending twice
+    ]
+    assert not any(ranker.is_lure(i) for i in honest)
+    paper = Item("arxiv", "paper", "A paper", "https://x/9", "Topics: m-free, m-download", meta={"topics": ["m-free", "m-download"]})
+    assert not ranker.is_lure(paper)
+    prose = Item("github", "repo", "a/lib", "https://x/8", "A dependency-free library for public-key signatures, lib-free and lib-download in prose.")
+    assert not ranker.is_lure(prose)  # the description is not read for endings
+
+
+def test_the_repository_name_counts_as_a_label():
+    assert ranker.is_lure(_tagged("a/nvidia-download", "nvidia-free"))
+
+
 def test_note_for_an_empty_topic_and_skipped_source():
     text = render_note("2026-10-27", [], ["Topic A"], [], [], "embeddings")
     assert "## Topic A\nNothing new today." in text

@@ -5,6 +5,11 @@ between your old version and the new one. Keep each entry to one short line a us
 understand. The version number lives in `src/research_radar/__init__.py`; raising it is
 what makes an update reach everyone.
 
+## Unreleased
+
+- A GitHub repository or model is dropped as a lure when its name and topics carry two different selling endings on one stem, such as `nvidia-broadcast-download` with `nvidia-broadcast-free` (endings: download, free, activated, crack, license). One ending alone, such as `ad-free`, is still fine.
+- The trust check also holds a repository under 200 KB with fewer than 10 stars when its owner has no followers (from 10 stars it is still 2 followers or fewer). `radar replay` and the follower counts the scan asks for use the same rule.
+
 ## 0.4.0
 
 - A watched GitHub feed is named `owner/name`, also when you list its `commits.atom`, and its items are releases, commits or (any other feed) articles. A short commit message gets "New commit to owner/name: ...", and the count of earlier items says releases, commits or entries.

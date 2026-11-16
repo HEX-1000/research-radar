@@ -126,13 +126,44 @@ def test_a_popular_owner_keeps_a_small_repository(make_cfg):
     assert not [w for w in result.warnings if w.startswith("Held back")]
 
 
-def test_a_large_or_unstarred_repository_costs_no_owner_request(make_cfg):
+def test_a_large_repository_costs_no_owner_request(make_cfg):
     cfg = make_cfg()
-    world = World([_raw("big/kit", 5000, 80, "big", LURE_TEXT), _raw("new/kit", 20, 3, "new", LURE_TEXT)])
+    world = World([_raw("big/kit", 5000, 80, "big", LURE_TEXT)])
     result = run(cfg, world)
-    assert {"big/kit", "new/kit"} <= {e.item.title for e in result.explain}
+    assert "big/kit" in {e.item.title for e in result.explain}
     assert not [c for c in world.calls if c.startswith("/users/")]
     assert not [w for w in result.warnings if w.startswith("Held back")]
+
+
+def test_under_ten_stars_only_an_owner_with_no_followers_is_held(make_cfg):
+    cfg = make_cfg(max_per_topic=5, max_items=5)
+    world = World(
+        [_raw("nofol/kit", 20, 3, "nofol", LURE_TEXT), _raw("one/kit", 20, 3, "one", LURE_TEXT)],
+        followers={"nofol": 0, "one": 1},
+    )
+    result = run(cfg, world)
+    assert "Held back for a week: nofol/kit (20 KB, 3 stars, owner with 0 followers)." in result.warnings
+    assert not [w for w in result.warnings if "(one/kit" in w or " one/kit" in w]
+    assert "one/kit" in {r.title for r in result.new_reports}
+
+
+def test_ten_stars_or_more_keeps_the_limit_of_two_followers(make_cfg):
+    cfg = make_cfg(max_per_topic=5, max_items=5)
+    world = World(
+        [_raw("two/kit", 20, 10, "two", LURE_TEXT), _raw("three/kit", 20, 10, "three", LURE_TEXT)],
+        followers={"two": 2, "three": 3},
+    )
+    result = run(cfg, world)
+    assert "Held back for a week: two/kit (20 KB, 10 stars, owner with 2 followers)." in result.warnings
+    assert "three/kit" in {r.title for r in result.new_reports}
+
+
+def test_an_unknown_star_count_is_not_thin():
+    from research_radar.sources.github import follower_limit, looks_thin, thin_reason
+
+    assert follower_limit(None) is None and follower_limit(9) == 0 and follower_limit(10) == 2
+    assert looks_thin(199) and not looks_thin(200) and not looks_thin(None)
+    assert thin_reason(None, 20, None, "x", {}) is None  # no request is made, so no Http is needed
 
 
 def test_a_failed_owner_request_counts_as_thin(make_cfg):

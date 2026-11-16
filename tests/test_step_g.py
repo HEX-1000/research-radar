@@ -528,7 +528,8 @@ def test_trust_check_counts_lures_and_others_from_the_first_observation(tmp_path
         ("github:lure-unseen", "lure", None),
         ("github:fit-caught", "fits", (133, 12, 1)),
         ("github:fit-safe", "fits", (5000, 400, 80)),
-        ("github:no-small-few-stars", "no", (10, 3, 0)),
+        ("github:no-small-few-stars", "no", (10, 3, 0)),  # under 10 stars: held when the owner has 0 followers
+        ("github:no-small-few-stars-followed", "no", (10, 3, 1)),  # under 10 stars and 1 follower: not caught
     ]:
         db.item(key)
         db.label(key, "*" if kind == "lure" else "Alpha", kind)
@@ -539,7 +540,7 @@ def test_trust_check_counts_lures_and_others_from_the_first_observation(tmp_path
     db.label("arxiv:2611.00001", "Alpha", "fits")  # not a repository
     trust = replay(cfg, AxisOllama()).trust
     assert trust.lures == {"caught": 1, "not caught": 2, "unknown": 1, "no observation": 1}
-    assert trust.others == {"caught": 1, "not caught": 2, "unknown": 0, "no observation": 0}
+    assert trust.others == {"caught": 2, "not caught": 2, "unknown": 0, "no observation": 0}
     assert trust.minus_only == 0
     lines = format_replay(replay(cfg, AxisOllama()))
     assert any(line.startswith("Trust check on labelled GitHub repositories") for line in lines)

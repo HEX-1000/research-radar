@@ -341,7 +341,7 @@ def test_nothing_is_asked_below_the_band_or_for_a_repository_that_is_not_thin():
     entries = [
         _entry(topic, "far/repo", "below_bar", score=0.5 - ranker.LABEL_BAND - 0.001, bar=0.5),  # just under the band
         _entry(topic, "big/repo", "day_full", size=5000),  # not small
-        _entry(topic, "few/repo", "day_full", stars=9),  # too few stars
+        _entry(topic, "nostars/repo", "day_full", stars=None),  # unknown stars: not thin
         _entry(topic, "nosize/repo", "day_full", size=None),  # unknown size is not thin
         _entry(topic, "shown/repo", "shown"),  # chosen: select already asked
         _entry(topic, "held/repo", "held"),  # held: select already asked
@@ -351,6 +351,13 @@ def test_nothing_is_asked_below_the_band_or_for_a_repository_that_is_not_thin():
     users = _Users()
     record = _ask(entries, users)
     assert users.asked == [] and record.followers == {}
+
+
+def test_a_small_repository_with_few_stars_is_asked_too():
+    topic = _topic()
+    users = _Users()
+    _ask([_entry(topic, "few/repo", "day_full", stars=3)], users)
+    assert users.asked == ["few"]
 
 
 def test_a_repository_exactly_at_the_band_edge_is_asked():

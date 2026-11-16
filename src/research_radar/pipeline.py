@@ -28,6 +28,7 @@ from .sources.github import (
     check_repos,
     fetch_readme,
     fetch_repo,
+    follower_limit,
     looks_thin,
     owner_followers,
     parse_repo,
@@ -471,7 +472,7 @@ def _ask_unchosen_owners(http: Http, scored: list[Scored], record: ScanRecord) -
         owner = item.meta.get("owner")
         if not owner or owner.lower() in record.followers:
             continue
-        if not looks_thin(item.meta.get("size_kb"), item.meta.get("stars")):
+        if not looks_thin(item.meta.get("size_kb")) or follower_limit(item.meta.get("stars")) is None:
             continue
         owner_followers(http, owner, record.followers)
         asked += 1

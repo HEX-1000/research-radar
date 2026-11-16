@@ -115,9 +115,41 @@ _LURE = re.compile(
 )
 
 
+# Selling endings of a label such as "nvidia-broadcast-download". One such ending is ordinary
+# ("ad-free", "voice-activated", "mit-license"); two different ones on one stem are not
+# (decision 56, tested on 3,518 repositories in review-data/lure_gap_test.py).
+_SELLING_LABEL = re.compile(r"^(?P<stem>.+)[-_](?P<ending>downloads?|free|activated|crack(?:ed)?|license)$")
+_SAME_ENDING = {"downloads": "download", "cracked": "crack"}
+
+
+def _labels(item: Item) -> list[str]:
+    """The repository name and its topics (or a model's tags), lower case."""
+    out = [item.title.split("/")[-1].lower()]
+    topics = item.meta.get("topics")
+    if not topics:
+        text = f" {item.text}"
+        for mark in (" Topics: ", " Tags: "):
+            if mark in text:
+                topics = [t.strip() for t in text.split(mark, 1)[1].split(",")]
+    out += [str(t).lower() for t in topics or []]
+    return out
+
+
+def _two_endings_on_one_stem(item: Item) -> bool:
+    found: dict[str, set[str]] = {}
+    for label in _labels(item):
+        m = _SELLING_LABEL.match(label.replace(".", "-"))
+        if m:
+            found.setdefault(m["stem"], set()).add(_SAME_ENDING.get(m["ending"], m["ending"]))
+    return any(len(endings) >= 2 for endings in found.values())
+
+
 def is_lure(item: Item) -> bool:
-    """True for a repository or model whose name, description or topics offer cracked software."""
-    return item.kind != "paper" and _LURE.search(_haystack(item)) is not None
+    """True for a repository or model whose name, description or topics offer cracked software, or
+    whose name and topics carry two different selling endings on one stem."""
+    if item.kind == "paper":
+        return False
+    return _LURE.search(_haystack(item)) is not None or _two_endings_on_one_stem(item)
 
 
 def feedback_adjust(vector: Sequence[float], likes: list[list[float]], dislikes: list[list[float]], weight: float) -> float:
