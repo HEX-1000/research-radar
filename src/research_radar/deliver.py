@@ -226,6 +226,19 @@ def send_email(cfg: Config, subject: str, text: str, page: str) -> None:
             pass
 
 
+def mask_address(address: str) -> str:
+    """a***@example.org: the first character, `***`, then the domain."""
+    address = address.strip()
+    local, at, domain = address.partition("@")
+    return f"{local[:1]}***{at}{domain}"
+
+
+def mask_chat(chat: str) -> str:
+    """...123: the last three characters; a shorter id is hidden."""
+    chat = chat.strip()
+    return f"...{chat[-3:]}" if len(chat) > 3 else "***"
+
+
 def check_email(cfg: Config) -> str:
     settings = email_settings(cfg)
     server = _smtp_session(settings)
@@ -233,7 +246,7 @@ def check_email(cfg: Config) -> str:
         server.quit()
     except (smtplib.SMTPException, OSError):
         pass
-    return f"login ok on {settings['host']}, mail goes to {', '.join(settings['recipients'])}"
+    return f"login ok on {settings['host']}, mail goes to {', '.join(mask_address(r) for r in settings['recipients'])}"
 
 
 # telegram -------------------------------------------------------------------------------
@@ -308,7 +321,9 @@ def check_telegram(cfg: Config) -> str:
     token = telegram_token(cfg)
     chat = telegram_chat_id(cfg)
     bot = _telegram_call(token, "getMe") or {}
-    return f"bot @{bot.get('username', '?')}, messages go to chat {chat}"
+    name = str(bot.get("username") or "")
+    shown = f"@{name[:3]}***" if name else "@?"
+    return f"bot {shown}, messages go to chat {mask_chat(chat)}"
 
 
 def find_telegram_chats(cfg: Config) -> list[tuple[str, str]]:

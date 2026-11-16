@@ -249,12 +249,30 @@ def test_global_and_topic_excludes():
         ("backtest", "Backtesting engine for ETFs", True),
         ("backtest", "x/prebacktester", False),
         ("sentinel-2", "Sentinel-2A imagery", True),
+        ("sentinel-2", "Sentinel 2 and sentinel_2 scenes", True),
+        ("claude code", "x/claude-code-tools. Topics: claude-code", True),
+        ("claude code", "x/tool. Topics: claude_code", True),
+        ("claude code", "x/claudecode", False),  # exactly one separator character, not none
+        ("claude code", "x/claude--code", False),  # and not two
+        ("remote sensing", "Papers on remote-sensing", True),
     ],
 )
 def test_keywords_match_whole_words_or_word_starts(keyword, text, hit):
     topic = Topic(name="T", description="d", keywords=[keyword])
     item = Item("github", "repo", text.split(".")[0], "https://x/1", text)
     assert ranker.keyword_hits(item, topic) == int(hit)
+
+
+def test_exclude_phrases_use_the_same_separators():
+    item = Item("github", "repo", "a/license-bypass", "https://x/1", "tool")
+    assert ranker.is_excluded(item, ["license bypass"])
+    assert not ranker.is_excluded(item, ["license  bypas5"])
+
+
+def test_votes_do_not_change_the_ranking_by_default():
+    from research_radar.config import DEFAULT_SETTINGS
+
+    assert DEFAULT_SETTINGS["feedback_weight"] == 0.0
 
 
 def test_repositories_that_offer_cracked_software_are_dropped():

@@ -246,6 +246,18 @@ def test_n_writes_no_and_the_digit_of_the_same_topic_means_yes(tmp_path):
     ]
 
 
+def test_w_saves_a_no_and_a_wanted_row_and_the_item_leaves_the_pool(tmp_path):
+    cfg, db = three_items(tmp_path)
+    run_label(cfg, ask=scripted(["w", "q"]), show=lambda _: None, now=NOW)
+    rows = db.rows("SELECT key, topic, value FROM label")
+    key = rows[0][0]
+    assert sorted((t, v) for _, t, v in rows) == [("*", "wanted"), ("Alpha", "no")]
+    assert key not in {c.key for c in pool_of(cfg)}
+    set_up = labelling.labelled_set(CandidateStore.open(cfg.state_dir, embed_model="m", now=NOW), cfg.topics)
+    entries, lures = set_up[0], set_up[2]
+    assert [v for (k, t), v in entries.items() if k == key] == ["no"] and key not in lures
+
+
 def test_o_opens_the_link_and_asks_again_s_skips_q_ends(tmp_path):
     cfg, db = three_items(tmp_path)
     shown, opened, asked = [], [], []

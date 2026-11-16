@@ -417,7 +417,7 @@ def test_doctor_checks_use_the_real_login_and_bot_lookup(make_cfg, smtp, telegra
     cfg = email_cfg(make_cfg)
     cfg.delivery["telegram"].update({"enabled": True, "chat_id": "42"})
     assert "login ok" in deliver.check_email(cfg)
-    assert "@radar_bot" in deliver.check_telegram(cfg)
+    assert "@rad***" in deliver.check_telegram(cfg)
     smtp.fail_login = True
     with pytest.raises(deliver.DeliveryError):
         deliver.check_email(cfg)
@@ -526,3 +526,19 @@ def test_telegram_notes_are_in_code_tags_so_hosts_are_not_linked():
     digest = Digest(date="2026-10-27", reports=[report()], warnings=["github: query 'x': api.github.com: HTTP 403"])
     text = "".join(m.text for m in render_telegram(digest))
     assert "<code>github: 1 search failed (x): api.github.com: HTTP 403</code>" in text
+
+
+def test_doctor_output_is_shortened():
+    assert deliver.mask_address("alice@example.org") == "a***@example.org"
+    assert deliver.mask_address("alice") == "a***"
+    assert deliver.mask_chat("-1001234567") == "...567"
+    assert deliver.mask_chat("123") == "***"
+
+
+def test_doctor_checks_print_no_full_address_or_chat(make_cfg, smtp, telegram):
+    cfg = email_cfg(make_cfg)
+    cfg.delivery["telegram"].update({"enabled": True, "chat_id": "123456789"})
+    text = deliver.check_email(cfg) + " " + deliver.check_telegram(cfg)
+    assert "radar_bot" not in text and "123456789" not in text
+    for recipient in cfg.delivery["email"]["to"] if isinstance(cfg.delivery["email"]["to"], list) else [cfg.delivery["email"]["to"]]:
+        assert recipient not in text

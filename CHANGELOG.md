@@ -7,6 +7,10 @@ what makes an update reach everyone.
 
 ## Unreleased
 
+- A space, hyphen or underscore in a keyword or an exclude phrase matches any one of the three: `claude code` finds `claude-code` and `sentinel-2` finds `sentinel 2`.
+- Votes no longer change the ranking (`feedback_weight` is 0 by default). They are still kept, count as labels in `radar replay` and keep the item's data past 30 days.
+- `radar doctor` shortens your email address (`a***@example.org`), Telegram chat id (`...123`) and bot name (`@abc***`), so its output is safe to post. `radar telegram-chat` still prints the full chat id.
+- `radar label` has a new answer `w`: you want the item, but no topic fits. It is not asked about again, and `radar replay` counts it as a "no" for the topic it was asked under.
 - A GitHub repository or model is dropped as a lure when its name and topics carry two different selling endings on one stem, such as `nvidia-broadcast-download` with `nvidia-broadcast-free` (endings: download, free, activated, crack, license). One ending alone, such as `ad-free`, is still fine.
 - The trust check also holds a repository under 200 KB with fewer than 10 stars when its owner has no followers (from 10 stars it is still 2 followers or fewer). `radar replay` and the follower counts the scan asks for use the same rule.
 

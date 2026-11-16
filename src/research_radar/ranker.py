@@ -2,8 +2,7 @@
 
 With an embedding model, an item's score for a topic is the cosine similarity
 between the item text and the topic description (or its keywords, whichever is
-closer), plus a small bonus per keyword found, plus a nudge from your earlier
-+ and - votes. Without Ollama the score falls back to counting keywords.
+closer), plus a small bonus per keyword found. Without Ollama the score falls back to counting keywords.
 """
 
 from __future__ import annotations
@@ -79,14 +78,26 @@ _START = r"(?<![^\W_])"
 _END = r"(?![^\W_])"
 
 
+def _separated(keyword: str) -> str:
+    """The keyword escaped, with each run of spaces, hyphens and underscores as exactly one of the three."""
+    parts = [re.escape(part) for part in re.split(r"[\s_-]+", keyword.lower().strip()) if part]
+    return "[-_ ]".join(parts) if parts else re.escape(keyword.lower().strip())
+
+
 @lru_cache(maxsize=1024)
 def keyword_pattern(keyword: str) -> re.Pattern[str]:
     """Keywords of four letters or fewer match whole words ("stac" does not match "stack"),
-    with a plural s allowed. Longer ones match at the start of a word ("backtest" finds "backtesting")."""
-    word = re.escape(keyword.lower().strip())
+    with a plural s allowed. Longer ones match at the start of a word ("backtest" finds "backtesting").
+    A space, hyphen or underscore in a keyword matches any one of the three ("claude code" finds "claude-code")."""
+    word = _separated(keyword)
     if len(keyword.strip()) <= 4:
         return re.compile(f"{_START}{word}s?{_END}")
     return re.compile(f"{_START}{word}")
+
+
+@lru_cache(maxsize=1024)
+def _exclude_pattern(phrase: str) -> re.Pattern[str]:
+    return re.compile(_separated(phrase))
 
 
 def keyword_hits(item: Item, topic: Topic) -> int:
@@ -96,7 +107,7 @@ def keyword_hits(item: Item, topic: Topic) -> int:
 
 def is_excluded(item: Item, phrases: Sequence[str]) -> bool:
     hay = _haystack(item)
-    return any(p.lower() in hay for p in phrases if p)
+    return any(_exclude_pattern(p).search(hay) for p in phrases if p and p.strip())
 
 
 # Wording of repositories that offer cracked or "activated" software, a common way to spread

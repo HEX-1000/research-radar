@@ -127,7 +127,7 @@ def run_label(
         show("Topics:")
         for number, topic in enumerate(cfg.topics, start=1):
             show(f"  {number}  {topic.name} (bar {topic_bar(cfg, topic):.2f})")
-        prompt = f"y fits / n no / 1-{len(names)} fits that topic instead / l lure / o open / s skip / q quit: "
+        prompt = f"y want it here / n not here / 1-{len(names)} want it under that topic / w want it, no topic fits / l lure / o open / s skip / q quit: "
         answered = 0
         for index, c in enumerate(pool):
             _show(store, c, len(pool) - index, show)
@@ -141,6 +141,8 @@ def run_label(
                     labels = [(c.topic, "fits")]
                 elif answer == "n":
                     labels = [(c.topic, "no")]
+                elif answer == "w":
+                    labels = [(c.topic, "no"), ("*", "wanted")]
                 elif answer == "l":
                     labels = [("*", "lure")]
                 elif answer.isdigit() and 1 <= int(answer) <= len(names):

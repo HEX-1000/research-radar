@@ -31,7 +31,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "github_token_env": "GITHUB_TOKEN",
     "rising_days": 14,
     "trust_check": True,  # hold back small, starred repositories from unfollowed accounts for a week
-    "feedback_weight": 0.2,
+    "feedback_weight": 0.0,
     "notes_dir": "",
 }
 
