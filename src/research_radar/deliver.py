@@ -11,6 +11,7 @@ scan and a successful one is never repeated.
 
 from __future__ import annotations
 
+import html
 import os
 import re
 import smtplib
@@ -18,7 +19,7 @@ import ssl
 import time
 from dataclasses import dataclass
 from datetime import date as date_type
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from pathlib import Path
@@ -39,6 +40,7 @@ from .digest import (
     vote_hash,
 )
 from .models import Report
+from .notes import MONTHS
 from .store import Store
 
 CHANNELS = ("email", "telegram")
@@ -47,6 +49,7 @@ TELEGRAM_PAUSE = 1.0  # seconds between two messages of one digest
 VOTE_DATA = re.compile(r"^v1([+-])([0-9a-f]{16})$")
 UPDATE_PAGE = 100
 UPDATE_CALLS = 10
+SKIP_NOTICE_DAYS = 2  # days without a saved scan before a skipped scheduled scan says so
 
 
 class DeliveryError(Exception):
@@ -93,6 +96,10 @@ def _empty_key(date: str) -> str:
 
 def _alert_key(date: str) -> str:
     return f"{date}|alert"
+
+
+def _skip_key(last_saved: str) -> str:
+    return f"skip:{last_saved}"
 
 
 def pending_reports(cfg: Config, store: Store, channel: str, today: str) -> list[Report]:
@@ -504,4 +511,60 @@ def send_test(cfg: Config) -> list[DeliveryResult]:
             result.note = "test message sent"
         except DeliveryError as exc:
             result.error = str(exc)
+    return results
+
+
+# after days without a saved scan ----------------------------------------------------------
+
+
+def last_saved_scan(store: Store) -> date_type | None:
+    """The local date of the newest time in last_run.json, or None when no scan has been saved."""
+    moments: list[datetime] = []
+    for value in store.last_runs().values():
+        try:
+            moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        moments.append(moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc))
+    return max(moments).astimezone().date() if moments else None
+
+
+def send_skip_notice(cfg: Config, store: Store, today: date_type, reason: str) -> list[DeliveryResult]:
+    """One message through every enabled channel when a scheduled scan was skipped and the last
+    saved scan is SKIP_NOTICE_DAYS or more days old. `reason` is what the skipped run printed;
+    its first line goes into the message.
+
+    Once per gap and channel: the key carries the date of the last saved scan, so a saved scan
+    starts a new gap. A failed send leaves no key, and the next skipped run tries again."""
+    last = last_saved_scan(store)
+    if last is None or (today - last).days < SKIP_NOTICE_DAYS:
+        return []
+    since = f"{last.day} {MONTHS[last.month - 1]}"
+    lines = reason.strip().splitlines()
+    first = lines[0].strip().rstrip(".") if lines else "No scan was run"
+    text = (
+        f"Research Radar has not saved a scan since {since}. Today: {first}. "
+        f"The next scan that runs collects what was missed, up to {int(cfg.settings['max_catchup_days'])} days back."
+    )
+    key = _skip_key(last.isoformat())
+    results: list[DeliveryResult] = []
+    for channel in CHANNELS:
+        if not cfg.channel_enabled(channel):
+            continue
+        result = DeliveryResult(channel)
+        results.append(result)
+        try:
+            if key in store.delivered().get(channel, []):
+                result.note = f"already told you that no scan was saved since {since}"
+                continue
+            if channel == "email":
+                send_email(cfg, f"Research Radar: no scan since {since}", text + "\n", f"<p>{html.escape(text)}</p>")
+            else:
+                send_telegram(cfg, [TelegramMessage(html.escape(text, quote=False), sound=True)])
+            store.mark_delivered(channel, [key])
+            result.note = f"told you that no scan was saved since {since}"
+        except DeliveryError as exc:
+            result.error = str(exc)
+        except Exception as exc:  # a skipped run must survive anything the sending code throws
+            result.error = f"unexpected failure ({type(exc).__name__})"
     return results

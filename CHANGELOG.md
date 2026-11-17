@@ -7,6 +7,7 @@ what makes an update reach everyone.
 
 ## Unreleased
 
+- When a scheduled scan is skipped and no scan has been saved for two days or more, you get one message by email or Telegram (whichever is on) with the date of the last saved scan and the reason. It is sent once until a scan is saved again.
 - A space, hyphen or underscore in a keyword or an exclude phrase matches any one of the three: `claude code` finds `claude-code` and `sentinel-2` finds `sentinel 2`.
 - Votes no longer change the ranking (`feedback_weight` is 0 by default). They are still kept, count as labels in `radar replay` and keep the item's data past 30 days.
 - `radar doctor` shortens your email address (`a***@example.org`), Telegram chat id (`...123`) and bot name (`@abc***`), so its output is safe to post. `radar telegram-chat` still prints the full chat id.

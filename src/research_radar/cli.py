@@ -85,7 +85,15 @@ PREVIEW_END = (
 )
 
 
-def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool, scheduled: bool = False) -> int:
+def cmd_scan(
+    cfg: Config,
+    days: int | None,
+    no_llm: bool,
+    explain: bool,
+    scheduled: bool = False,
+    skip_reason: list[str] | None = None,
+) -> int:
+    """`skip_reason` receives the line that says why the scan ended as skipped."""
     from .candidates import StoreError
     from .lock import ScanLocked
     from .pipeline import scan
@@ -98,6 +106,8 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool, schedul
         result = scan(cfg, days=days, use_llm=not no_llm, progress=lambda m: print(m, flush=True))
     except ScanLocked as exc:
         print(str(exc), flush=True)
+        if skip_reason is not None:
+            skip_reason.append(str(exc))
         return EXIT_SKIPPED
     except StoreError as exc:
         print(f"error: {exc}", flush=True)
@@ -130,6 +140,8 @@ def cmd_scan(cfg: Config, days: int | None, no_llm: bool, explain: bool, schedul
         print()
         print(PREVIEW_END)
         if scheduled:
+            if skip_reason is not None:
+                skip_reason.append(PREVIEW_END)
             return EXIT_SKIPPED
     return 0
 
@@ -169,11 +181,28 @@ def _collect_votes_when_skipped(cfg: Config) -> None:
         print(f"Telegram votes not collected: {exc}", flush=True)
 
 
+def _say_when_no_scan_was_saved(cfg: Config, reason: str) -> None:
+    """A skipped scheduled scan is written to the log only. After two days without a saved scan
+    it also sends one message through every enabled channel. Nothing here changes the exit code."""
+    from .deliver import send_skip_notice
+    from .store import Store
+
+    try:
+        today = datetime.now().astimezone().date()
+        results = send_skip_notice(cfg, Store(cfg.state_dir), today, reason)
+    except Exception as exc:
+        print(f"The message about the days without a saved scan was not sent ({type(exc).__name__}).", flush=True)
+        return
+    for line in describe(results):
+        print(line, flush=True)
+
+
 def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, explain: bool, sleep=time.sleep) -> int:
     """The scan the daily task runs. Everything it prints goes to <data home>/logs/scan.log,
     because pythonw has no console. It does not scan when Ollama or the embedding model is
     missing: a scan would only match by keywords, and the sources would count that day as read.
-    The next scan then collects the gap, up to max_catchup_days."""
+    The next scan then collects the gap, up to max_catchup_days. A skipped run that finds the
+    last saved scan two or more days old says so through every enabled channel."""
     from .schedule import log_path
 
     log_file = log_path(resolve_home(home_arg))
@@ -186,6 +215,7 @@ def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, exp
         try:
             cfg = _load(home_arg)
             state, advice = "ok", []
+            reasons: list[str] = []
             if not no_llm:
                 for attempt in range(OLLAMA_TRIES):
                     state, advice = ollama_advice(cfg.settings, _ollama_names(cfg), retry_hint="run the scan again")
@@ -197,9 +227,12 @@ def cmd_scheduled_scan(home_arg: str | None, days: int | None, no_llm: bool, exp
                     print(text)
                 print("No scan was run. The next scan collects what was missed.", flush=True)
                 _collect_votes_when_skipped(cfg)
+                reasons = [text for text, _ in advice]
                 code = EXIT_SKIPPED
             else:
-                code = cmd_scan(cfg, days, no_llm, explain, scheduled=True)
+                code = cmd_scan(cfg, days, no_llm, explain, scheduled=True, skip_reason=reasons)
+            if code == EXIT_SKIPPED:
+                _say_when_no_scan_was_saved(cfg, reasons[0] if reasons else "")
         except ConfigError as exc:
             print(f"error: {exc}")
             code = 2
