@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "build", "dist"}
+SKIP_DIRS = {".git", ".claude", ".venv", "venv", "__pycache__", ".pytest_cache", "build", "dist"}
 
 
 def tracked_text_files():
