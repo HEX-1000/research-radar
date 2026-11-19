@@ -63,7 +63,7 @@ Any chat model works. If `chat_model` is empty in your settings, the first insta
 
 Open Research Radar from the desktop icon, or run `radar`.
 
-The first thing to do is to describe your own interests. `radar init` copied an example `interests.yaml` with two topics, "Local-first AI tools" and "Geospatial machine learning". While those examples are unchanged, the interface says so, does not start a scan by itself, and `e` opens the file in an editor. Replace the topics with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. In a keyword, a space, hyphen or underscore matches any one of the three, so `claude code` also finds `claude-code`. Save the file and press `s`: the interface reads the file again before every scan, so it can stay open while you edit. The file documents every setting.
+The first thing to do is to describe your own interests. `radar init` copied an example `interests.yaml` with two invented topics, "Example: Web accessibility tools" and "Example: Protein structure prediction". They only show the format. While those examples are unchanged, the interface says so, does not start a scan by itself, and `e` opens the file in an editor. Replace the topics with your own, and write each description the way you would explain it to a colleague: what you work on, which tools you use, what you want to hear about. The better the description, the better the matching. In a keyword, a space, hyphen or underscore matches any one of the three, so `screen reader` also finds `screen-reader`. Save the file and press `s`: the interface reads the file again before every scan, so it can stay open while you edit. The file documents every setting.
 
 If a later edit breaks the file (one wrong indent is enough), scans go on with the last copy that could be read, which is kept in `state/interests.last-good.yaml`. Until you fix the file, the digest page, the email, the Telegram message, the interface and `radar doctor` say which line to look at.
 
@@ -176,11 +176,11 @@ Without the Task Scheduler, `radar scan` does the same work from the command lin
 
 ```yaml
 topics:
-  - name: Decompilation tools
+  - name: Web accessibility tools
     description: ...
     watch:
-      - NationalSecurityAgency/ghidra                        # GitHub owner/name: its releases feed
-      - https://github.com/matt-kempster/m2c/commits.atom    # or any Atom or RSS feed
+      - dequelabs/axe-core                                   # GitHub owner/name: its releases feed
+      - https://github.com/nvaccess/nvda/commits.atom        # or any Atom or RSS feed
     feeds:
       urls: [https://example.org/blog/feed.xml]              # posts, scored like any other item
 ```
@@ -214,7 +214,7 @@ Updating means running code downloaded from this repository, so the repository o
 
 ## Status
 
-Version 0.3. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface, the first-run guidance, the update check, the daily task and every source parser. The five sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. The Windows installer and the update check are new in 0.2, and the daily task is new in 0.3. If a source, a channel, the installer or an update breaks, `radar doctor` or the console says why. Please open an issue with the output; `radar doctor` shortens your email address, Telegram chat id and bot name. Questions and ideas go to [Discussions](https://github.com/HEX-1000/research-radar/discussions).
+Version 0.5. The test suite covers the pipeline, ranking, notes, the digest, delivery, the interface, the first-run guidance, the update check, the daily task and every source parser. The six sources were checked against the live services with `radar doctor` and a real scan on the author's machine. Email and Telegram delivery are tested against fake servers only, so run `radar send --test` once after setting them up. The Windows installer and the update check are new in 0.2, and the daily task is new in 0.3. If a source, a channel, the installer or an update breaks, `radar doctor` or the console says why. Please open an issue with the output; `radar doctor` shortens your email address, Telegram chat id and bot name. Questions and ideas go to [Discussions](https://github.com/HEX-1000/research-radar/discussions).
 
 `min_score` depends on the embedding model. With `nomic-embed-text` the default of 0.55 is a starting point, and with `embeddinggemma` the best matches score lower (about 0.45 to 0.5), so 0.44 is a better start. Run `radar scan --days 3 --explain` to see the scores and the bar of each topic, and set it for your own topics. A topic can have its own `min_score` and `max_per_topic` in `interests.yaml`; they replace the values under `settings` for that topic. An item goes to the topic whose bar it clears by the most, and `max_per_topic: 0` hides a topic while its items are still scored.
 

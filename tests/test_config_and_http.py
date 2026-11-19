@@ -18,9 +18,10 @@ from research_radar.http import Http, SourceError
 
 def test_example_file_parses_and_has_two_topics(tmp_path):
     cfg = parse_config(yaml.safe_load(example_text()), tmp_path)
-    assert [t.name for t in cfg.topics] == ["Local-first AI tools", "Geospatial machine learning"]
+    assert [t.name for t in cfg.topics] == ["Example: Web accessibility tools", "Example: Protein structure prediction"]
     assert cfg.source_enabled("github") and cfg.source_enabled("forgejo")
-    assert cfg.topics[0].source_option("arxiv", "categories") == ["cs.IR", "cs.CL"]
+    assert cfg.topics[0].source_option("arxiv", "categories") == ["cs.HC"]
+    assert cfg.notices == [] and cfg.problem == ""  # every key in the starter file is a known one
 
 
 def test_init_never_overwrites(tmp_path):

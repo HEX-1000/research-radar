@@ -10,9 +10,9 @@ import httpx
 import pytest
 import yaml
 
-from conftest import FakeOllama, db_rows, make_handler, stored_item
+from conftest import FakeOllama, db_rows, fixture_text, make_handler, stored_item
 from research_radar import cli
-from research_radar.config import ConfigError, example_text, parse_config
+from research_radar.config import ConfigError, parse_config
 from research_radar.digest import KIND_LABEL
 from research_radar.http import Http, SourceError
 from research_radar.llm import OllamaError
@@ -120,7 +120,7 @@ def web():
 
 
 def config(tmp_path, *patches, **settings):
-    data = yaml.safe_load(example_text())
+    data = yaml.safe_load(fixture_text())
     data["settings"].update({"min_score": 0.2, "feedback_weight": 0.2})
     data["settings"].update(settings)
     for patch, topic in zip(patches, data["topics"]):

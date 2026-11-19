@@ -5,15 +5,17 @@ between your old version and the new one. Keep each entry to one short line a us
 understand. The version number lives in `src/research_radar/__init__.py`; raising it is
 what makes an update reach everyone.
 
-## Unreleased
+## 0.5.0
 
+- The starter `interests.yaml` that `radar init` copies has two new example topics, "Example: Web accessibility tools" and "Example: Protein structure prediction". They are invented and marked as examples in the file. A file you already have is not changed; if it still holds the old example topics, the app treats them as examples as before.
 - When a scheduled scan is skipped and no scan has been saved for two days or more, you get one message by email or Telegram (whichever is on) with the date of the last saved scan and the reason. It is sent once until a scan is saved again.
-- A space, hyphen or underscore in a keyword or an exclude phrase matches any one of the three: `claude code` finds `claude-code` and `sentinel-2` finds `sentinel 2`.
+- A space, hyphen or underscore in a keyword or an exclude phrase matches any one of the three: `screen reader` finds `screen-reader` and `alt-text` finds `alt text`.
 - Votes no longer change the ranking (`feedback_weight` is 0 by default). They are still kept, count as labels in `radar replay` and keep the item's data past 30 days.
 - `radar doctor` shortens your email address (`a***@example.org`), Telegram chat id (`...123`) and bot name (`@abc***`), so its output is safe to post. `radar telegram-chat` still prints the full chat id.
 - `radar label` has a new answer `w`: you want the item, but no topic fits. It is not asked about again, and `radar replay` counts it as a "no" for the topic it was asked under.
 - A GitHub repository or model is dropped as a lure when its name and topics carry two different selling endings on one stem, such as `nvidia-broadcast-download` with `nvidia-broadcast-free` (endings: download, free, activated, crack, license). One ending alone, such as `ad-free`, is still fine.
 - The trust check also holds a repository under 200 KB with fewer than 10 stars when its owner has no followers (from 10 stars it is still 2 followers or fewer). `radar replay` and the follower counts the scan asks for use the same rule.
+- Updates now come from a `stable` branch of the repository, which GitHub moves to a commit of `main` only after every test has passed for it, so a copy never installs code that was not checked. Copies on 0.2.0 to 0.4.0 read `main` and switch to `stable` with this update.
 
 ## 0.4.0
 

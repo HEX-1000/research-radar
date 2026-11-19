@@ -8,14 +8,16 @@ import yaml
 from textual.widgets import DataTable, Static
 from textual.widgets._footer import FooterKey
 
+from conftest import fixture_text
+
 from research_radar import cli, llm, tui
 from research_radar.config import example_text, parse_config, uses_example_topics
 from research_radar.llm import Ollama, OllamaError, has_model, ollama_advice
 from research_radar.pipeline import RunResult
 
 OWN_TOPICS = [
-    {"name": "Teaching videos", "description": "Code-driven animation for computer science lessons."},
-    {"name": "Terrain", "description": "Elevation models and satellite imagery of hills and valleys."},
+    {"name": "Bread baking", "description": "Sourdough starters, hydration and oven schedules."},
+    {"name": "Bird songs", "description": "Recordings and classifiers for the calls of garden birds."},
 ]
 EMBED = "nomic-embed-text:latest"
 
@@ -94,6 +96,45 @@ def test_a_remote_ollama_is_never_called_not_installed(monkeypatch):
     monkeypatch.setattr(llm, "ollama_installed", lambda: False)
     settings = {"ollama_url": "http://192.168.1.20:11434", "embed_model": "x", "chat_model": ""}
     assert "not reachable" in ollama_advice(settings, None)[1][0][0]
+
+
+# --------------------------------------------------------------------------- the starter file
+
+
+def test_the_starter_topics_are_marked_as_invented_examples():
+    """A new user reads this file first. Its topics must not read like a person's own interests."""
+    text = example_text()
+    topics = yaml.safe_load(text)["topics"]
+    assert len(topics) == 2 and all(t["name"].startswith("Example: ") for t in topics)
+    assert "invented examples" in text and "EXAMPLE TOPICS" in text
+    for topic in topics:
+        words = set(topic["description"].lower().replace(".", " ").replace(",", " ").split())
+        assert not words & {"i", "my", "me", "mine", "we", "our"}
+
+
+def test_the_starter_file_has_none_of_the_topics_of_0_4_0():
+    old = {t["name"]: t for t in yaml.safe_load(fixture_text())["topics"]}  # the fixture keeps them for the scores
+    new = yaml.safe_load(example_text())["topics"]
+    assert not {t["name"] for t in new} & set(old)
+    old_keywords = {k for t in old.values() for k in t["keywords"]}
+    assert not {k for t in new for k in t["keywords"]} & old_keywords
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_a_starter_file_from_0_4_0_still_counts_as_the_examples(tmp_path, edited):
+    """0.1.0 to 0.4.0 copied two other topics. Unedited, they get the notice; an edited one is the user's."""
+    data = yaml.safe_load(fixture_text())
+    if edited:
+        data["topics"][0]["description"] += " Also speech models."
+    assert uses_example_topics(parse_config(data, tmp_path)) is not edited
+
+
+def test_an_old_and_a_new_example_together_are_still_examples(tmp_path):
+    data = yaml.safe_load(example_text())
+    data["topics"][1] = yaml.safe_load(fixture_text())["topics"][1]
+    assert uses_example_topics(parse_config(data, tmp_path))
+    data["topics"].append({"name": "Bread baking", "description": "Sourdough starters."})
+    assert not uses_example_topics(parse_config(data, tmp_path))
 
 
 # --------------------------------------------------------------------------- the interface
@@ -266,7 +307,7 @@ async def test_e_opens_interests_yaml_and_s_scans_with_the_saved_edit(tmp_path):
         (cfg.home / "interests.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
         await pilot.press("s")
         await app.workers.wait_for_complete()
-        assert [t.name for t in spy.configs[0].topics] == ["Teaching videos", "Terrain"]
+        assert [t.name for t in spy.configs[0].topics] == ["Bread baking", "Bird songs"]
         assert not app.example_topics
 
 

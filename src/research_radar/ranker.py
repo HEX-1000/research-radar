@@ -86,9 +86,9 @@ def _separated(keyword: str) -> str:
 
 @lru_cache(maxsize=1024)
 def keyword_pattern(keyword: str) -> re.Pattern[str]:
-    """Keywords of four letters or fewer match whole words ("stac" does not match "stack"),
-    with a plural s allowed. Longer ones match at the start of a word ("backtest" finds "backtesting").
-    A space, hyphen or underscore in a keyword matches any one of the three ("claude code" finds "claude-code")."""
+    """Keywords of four letters or fewer match whole words ("rust" does not match "rustic"),
+    with a plural s allowed. Longer ones match at the start of a word ("caption" finds "captioning").
+    A space, hyphen or underscore in a keyword matches any one of the three ("screen reader" finds "screen-reader")."""
     word = _separated(keyword)
     if len(keyword.strip()) <= 4:
         return re.compile(f"{_START}{word}s?{_END}")

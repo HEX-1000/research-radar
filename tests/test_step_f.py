@@ -7,10 +7,10 @@ from datetime import datetime, timezone
 import pytest
 import yaml
 
-from conftest import FakeOllama
+from conftest import FakeOllama, fixture_text
 from research_radar import cli
 from research_radar import pipeline
-from research_radar.config import ConfigError, Topic, example_text, parse_config
+from research_radar.config import ConfigError, Topic, parse_config
 from research_radar.models import Item
 from research_radar.pipeline import scan, topic_fingerprint
 from research_radar.ranker import Scored, rank, select
@@ -24,7 +24,7 @@ def entry(name, score, bar, key=None):
 
 
 def config(tmp_path, topic_patches=None, **settings):
-    data = yaml.safe_load(example_text())
+    data = yaml.safe_load(fixture_text())
     data["settings"].update(settings)
     for patch, topic in zip(topic_patches or [], data["topics"]):
         topic.update(patch)
@@ -149,7 +149,7 @@ def test_a_topic_bar_and_a_zero_cap_change_what_a_scan_shows(tmp_path, http_fact
     base = run(config(tmp_path / "a", min_score=0.2), http_factory())
     assert base.new_reports
     topic = base.new_reports[0].topic
-    index = [t["name"] for t in yaml.safe_load(example_text())["topics"]].index(topic)
+    index = [t["name"] for t in yaml.safe_load(fixture_text())["topics"]].index(topic)
     padding = [{} for _ in range(index)]
 
     raised = run(config(tmp_path / "b", padding + [{"min_score": 0.99}], min_score=0.2), http_factory())

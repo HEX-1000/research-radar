@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 import re
 import shutil
@@ -176,6 +177,21 @@ def _same_text(a: str, b: str) -> bool:
     return " ".join(a.split()) == " ".join(b.split())
 
 
+# The two example topics that 0.1.0 to 0.4.0 copied, as sha256 of "name\ndescription" with
+# runs of whitespace as one space. A starter file from then is still an unedited example.
+OLD_EXAMPLE_TOPICS = frozenset(
+    {
+        "204a3fc40b9ea836e2c964c5dc570ee07d1eb15306f445b2e263224c915b7428",
+        "585ceba36b09029447829f7aebb6ccbe870848634704593071ea58dd53005b30",
+    }
+)
+
+
+def _topic_mark(name: str, description: str) -> str:
+    text = f"{name.strip()}\n{' '.join(description.split())}"
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def uses_example_topics(cfg: Config) -> bool:
     """True while every topic is still one of the examples that `radar init` copied, unedited."""
     data = yaml.safe_load(example_text()) or {}
@@ -185,7 +201,9 @@ def uses_example_topics(cfg: Config) -> bool:
         if isinstance(t, dict)
     }
     return bool(cfg.topics) and all(
-        t.name in examples and _same_text(t.description, examples[t.name]) for t in cfg.topics
+        (t.name in examples and _same_text(t.description, examples[t.name]))
+        or _topic_mark(t.name, t.description) in OLD_EXAMPLE_TOPICS
+        for t in cfg.topics
     )
 
 

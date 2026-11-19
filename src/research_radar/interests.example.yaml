@@ -3,6 +3,9 @@
 # This file is the whole guide. Edit it, add topics, remove topics. Nothing in
 # here ever leaves your computer. `radar init` copies it to your data home.
 #
+# The two topics at the end are invented examples that show the format. They
+# are nobody's interests. Replace both with your own before the first scan.
+#
 # How a scan works: each source fetches new items for your topics, a local
 # embedding model scores every item against the topic descriptions below, and
 # only the best few are summarised by a local chat model. Write the
@@ -72,43 +75,45 @@ sources:
     token_env:         # Codeberg answers searches only with an access token, see the README
       codeberg.org: RADAR_CODEBERG_TOKEN
 
+# EXAMPLE TOPICS. Both are invented to show the format; replace them with your own.
+# While they are unchanged the app says so and does not start a scan by itself.
 topics:
-  - name: Local-first AI tools
+  - name: "Example: Web accessibility tools"
     description: >
-      Software that runs language models and retrieval on my own machine
-      without cloud services. Local inference servers, embedding models,
-      SQLite or other embedded search, context and token reduction for coding
-      assistants, MCP servers.
-    # Keywords of four letters or fewer match whole words (mcp, not mcpx); longer ones
-    # match the start of a word (retrieval also finds retrievals).
-    keywords: [ollama, local llm, embeddings, retrieval, mcp, sqlite fts]
-    exclude: [crypto trading bot]
+      Tools that find and fix accessibility problems in websites and apps.
+      Automated WCAG checkers, screen reader testing, color contrast and
+      keyboard navigation checks, accessible component libraries, and tools
+      that write captions and image descriptions.
+    # Keywords of four letters or fewer match whole words (wcag, not wcagx); longer ones
+    # match the start of a word (screen reader also finds screen readers).
+    keywords: [accessibility, wcag, screen reader, color contrast, alt text]
+    exclude: [accessibility overlay]
     # Optional: feeds. `watch` shows what appears there without a bar (GitHub owner/name means its
     # releases feed; a repository without releases needs its .../commits.atom URL). `feeds: urls:`
     # lists blogs whose posts are scored like any other item.
     # watch:
-    #   - ollama/ollama
-    #   - https://github.com/ggml-org/llama.cpp/commits.atom
+    #   - dequelabs/axe-core
+    #   - https://github.com/nvaccess/nvda/commits.atom
     # feeds:
     #   urls: [https://example.org/blog/feed.xml]
     # Optional, per topic: min_score and max_per_topic replace the values under settings for this
     # topic only (max_per_topic: 0 hides it). Leave them out until `radar scan --explain` shows a need.
     github:
-      queries: [local llm, mcp server, retrieval]
+      queries: [accessibility testing, wcag, screen reader]
     arxiv:
-      categories: [cs.IR, cs.CL]
-      terms: [retrieval, context compression, long context]
+      categories: [cs.HC]
+      terms: [accessibility, screen reader, assistive technology]
 
-  - name: Geospatial machine learning
+  - name: "Example: Protein structure prediction"
     description: >
-      Satellite imagery, elevation models and terrain analysis with open data
-      and open tools. Sentinel and Landsat, STAC catalogs, change detection,
-      segmentation of remote sensing images.
-    keywords: [remote sensing, sentinel-2, stac, dem, segmentation]
+      Machine learning for protein structure and design. Structure prediction
+      models, protein language models, docking, open datasets and benchmarks,
+      and tools that run these models on one workstation.
+    keywords: [protein structure, protein folding, protein design, docking]
     github:
-      queries: [remote sensing, stac, satellite imagery]
+      queries: [protein structure prediction, protein design]
     arxiv:
-      categories: [eess.IV, cs.CV]
-      terms: [remote sensing, satellite]
+      categories: [q-bio.BM, cs.LG]
+      terms: [protein structure, protein design]
     forgejo:
-      queries: [remote sensing]
+      queries: [bioinformatics]

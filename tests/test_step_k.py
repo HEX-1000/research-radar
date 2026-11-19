@@ -11,7 +11,7 @@ import httpx
 import pytest
 import yaml
 
-from conftest import GITHUB_SEARCH, FakeOllama, db_rows, make_handler
+from conftest import GITHUB_SEARCH, FakeOllama, db_rows, fixture_text, make_handler
 from research_radar import labelling, ranker
 from research_radar.candidates import ScanRecord
 from research_radar.config import DEFAULT_SOURCES, example_text, parse_config
@@ -479,7 +479,7 @@ def test_a_scan_asks_about_thin_repositories_the_topic_cap_stopped(tmp_path, mak
 
 
 def test_a_scan_asks_about_thin_repositories_just_under_the_bar(tmp_path):
-    data = yaml.safe_load(example_text())
+    data = yaml.safe_load(fixture_text())
     data["settings"].update({"min_score": 0.2, "feedback_weight": 0.2})
     data["topics"][0]["min_score"] = 0.8  # alice clears it; owna (0.726) and ownd (0.761) are below it, inside the band
     cfg = parse_config(data, tmp_path / "home")
@@ -573,7 +573,7 @@ def test_a_file_that_turns_it_on_keeps_it_on(tmp_path):
 
 def test_a_scan_with_the_default_does_not_read_the_models_list(tmp_path):
     calls: list[str] = []
-    data = yaml.safe_load(example_text())
+    data = yaml.safe_load(fixture_text())
     data["sources"].pop("huggingface-models")
     cfg = parse_config(data, tmp_path / "home")
     http = Http(transport=httpx.MockTransport(make_handler(calls)), sleep=lambda seconds: None)

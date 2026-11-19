@@ -395,12 +395,12 @@ def test_finding_the_chat_id(make_cfg, telegram):
     state["body"] = {
         "ok": True,
         "result": [
-            {"message": {"chat": {"id": 42, "first_name": "Arca", "last_name": "A"}}},
-            {"message": {"chat": {"id": 42, "first_name": "Arca"}}},
+            {"message": {"chat": {"id": 42, "first_name": "Robin", "last_name": "A"}}},
+            {"message": {"chat": {"id": 42, "first_name": "Robin"}}},
             {"my_chat_member": {"chat": {"id": -100, "title": "Radar group"}}},
         ],
     }
-    assert deliver.find_telegram_chats(make_cfg()) == [("42", "Arca"), ("-100", "Radar group")]
+    assert deliver.find_telegram_chats(make_cfg()) == [("42", "Robin"), ("-100", "Radar group")]
 
 
 def test_test_message_goes_through_each_enabled_channel(make_cfg, smtp, telegram):
@@ -488,9 +488,9 @@ def test_send_delivers_pending_items_and_a_second_call_has_nothing_left(tmp_path
 def test_telegram_chat_command(tmp_path, capsys, telegram):
     _, state = telegram
     home, _ = seed_home(tmp_path)
-    state["body"] = {"ok": True, "result": [{"message": {"chat": {"id": 42, "first_name": "Arca"}}}]}
+    state["body"] = {"ok": True, "result": [{"message": {"chat": {"id": 42, "first_name": "Robin"}}}]}
     assert cli.main(["--home", str(home), "telegram-chat"]) == 0
-    assert "42  Arca" in capsys.readouterr().out
+    assert "42  Robin" in capsys.readouterr().out
     state["body"] = {"ok": True, "result": []}
     assert cli.main(["--home", str(home), "telegram-chat"]) == 1
 
@@ -512,13 +512,13 @@ def test_repeated_failed_searches_become_one_note():
     warnings = [
         "github: query 'bm25': HTTP 403",
         "github: query 'sqlite fts5': HTTP 403",
-        "arxiv: topic 'Finance tools': HTTP 429",
+        "arxiv: topic 'Bird songs': HTTP 429",
         "forgejo ran slowly",
     ]
     digest = Digest(date="2026-10-27", reports=[report()], warnings=warnings)
     notes = digest.footer_notes()
     assert notes[0] == "github: 2 searches failed (bm25, sqlite fts5): HTTP 403"
-    assert notes[1] == "arxiv: 1 search failed (Finance tools): HTTP 429"
+    assert notes[1] == "arxiv: 1 search failed (Bird songs): HTTP 429"
     assert notes[2] == "forgejo ran slowly"
 
 

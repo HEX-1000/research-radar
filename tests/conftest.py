@@ -12,9 +12,20 @@ import httpx
 import pytest
 import yaml
 
-from research_radar.config import Config, example_text, parse_config
+from research_radar.config import Config, parse_config
 from research_radar.http import Http
 from research_radar.llm import OllamaError
+
+FIXTURE_FILE = Path(__file__).parent / "data" / "interests.fixture.yaml"
+
+
+def fixture_text() -> str:
+    """The interests file the tests build on. Its two topics match the fake items below.
+
+    The starter file a new user gets (`config.example_text`) can change its topics without
+    changing a score here, because no test scores items against it.
+    """
+    return FIXTURE_FILE.read_text(encoding="utf-8")
 
 GITHUB_SEARCH = {
     "total_count": 2,
@@ -236,7 +247,7 @@ def http_factory():
 @pytest.fixture
 def make_cfg(tmp_path: Path):
     def build(**settings) -> Config:
-        data = yaml.safe_load(example_text())
+        data = yaml.safe_load(fixture_text())
         data["settings"].update({"min_score": 0.2, "feedback_weight": 0.2})
         data["settings"].update(settings)
         return parse_config(data, tmp_path / "home")

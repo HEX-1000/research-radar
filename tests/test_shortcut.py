@@ -8,8 +8,8 @@ import pytest
 from research_radar import cli, shortcut
 
 
-HOME = Path("D:/Projects/Research Radar/data")
-EXE = ["D:/Projects/Research Radar/research-radar/.venv/Scripts/radar.exe"]
+HOME = Path("D:/Tools/Research Radar/data")
+EXE = ["D:/Tools/Research Radar/research-radar/.venv/Scripts/radar.exe"]
 ICON = HOME / "radar.ico"
 
 
