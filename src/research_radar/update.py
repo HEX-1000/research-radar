@@ -44,7 +44,10 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 REPO = "HEX-1000/research-radar"
-BRANCH = "main"
+# Updates read `stable`: the last commit of main that passed every CI job (see tests.yml).
+BRANCH = "stable"
+# A git clone must be on this branch to be updated; the update pulls BRANCH into it.
+CLONE_BRANCH = "main"
 VERSION_PATH = "src/research_radar/__init__.py"
 RAW = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}"
 VERSION_URL = f"{RAW}/{VERSION_PATH}"
@@ -362,15 +365,17 @@ def origin_is(url: str, repo: str) -> bool:
     return re.search(r"[:/]" + re.escape(repo) + r"(?:\.git)?/?$", url, re.IGNORECASE) is not None
 
 
-def _update_git(root: Path, old: str, repo: str, branch: str, pyproject_url: str, timeout: float, pip: Pip) -> UpdateResult:
+def _update_git(
+    root: Path, old: str, repo: str, branch: str, clone_branch: str, pyproject_url: str, timeout: float, pip: Pip,
+) -> UpdateResult:
     if not shutil.which("git"):
         return UpdateResult("skipped", old, "", "git is not on PATH; run git pull yourself")
     rc, origin = _git(root, "remote", "get-url", "origin")
     if rc != 0 or not origin_is(origin, repo):
         return UpdateResult("skipped", old, "", "this clone does not point at the official repository")
     rc, current = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
-    if rc != 0 or current != branch:
-        return UpdateResult("skipped", old, "", f"not on branch {branch}")
+    if rc != 0 or current != clone_branch:
+        return UpdateResult("skipped", old, "", f"not on branch {clone_branch}")
     rc, status = _git(root, "status", "--porcelain", "--untracked-files=no")
     if rc != 0 or status.strip():
         return UpdateResult("skipped", old, "", "tracked files have local edits; run git pull yourself")
@@ -404,6 +409,7 @@ def check_and_update(
     zip_url: str = ZIP_URL,
     repo: str = REPO,
     branch: str = BRANCH,
+    clone_branch: str = CLONE_BRANCH,
     timeout: float = 4.0,
     pip: Pip | None = None,
 ) -> UpdateResult:
@@ -430,7 +436,7 @@ def check_and_update(
     pip = pip or _pip_install
     try:
         if (root / ".git").exists():
-            result = _update_git(root, old, repo, branch, pyproject_url, timeout, pip)
+            result = _update_git(root, old, repo, branch, clone_branch, pyproject_url, timeout, pip)
         else:
             result = _update_zip(root, zip_url, old, timeout, pip)
     except UpdateError as exc:

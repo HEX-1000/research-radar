@@ -68,3 +68,24 @@ jobs:
       - name: The installer can be run again
         shell: cmd
         run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+
+  stable:
+    name: Move stable to the tested commit
+    needs: [pytest, installer]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: stable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward stable
+        shell: bash
+        run: |
+          if git fetch origin stable 2>/dev/null && ! git merge-base --is-ancestor FETCH_HEAD "$GITHUB_SHA"; then
+            echo "stable is not behind $GITHUB_SHA; left as it is"
+            exit 0
+          fi
+          git push origin "$GITHUB_SHA:refs/heads/stable"

@@ -191,9 +191,9 @@ Each source is a small module in `src/research_radar/sources/`. A source takes t
 
 ## Updates
 
-When the terminal interface opens, it reads one small file from this repository on GitHub, `src/research_radar/__init__.py`, and compares the version in it with yours. If the version on GitHub is newer, it installs the new files and starts the new version. You see one line in the console and a notice in the app that lists what changed, taken from `CHANGELOG.md`.
+When the terminal interface opens, it reads one small file from the `stable` branch of this repository on GitHub, `src/research_radar/__init__.py`, and compares the version in it with yours. If the version on GitHub is newer, it installs the new files and starts the new version. You see one line in the console and a notice in the app that lists what changed, taken from `CHANGELOG.md`. `stable` is the last commit of `main` that passed every test, so a copy never installs code that CI has not checked.
 
-- A `git clone` of this repository is updated with `git pull --ff-only`, unless a tracked file has local edits. Then it skips the update and tells you. A clone of a fork is not updated.
+- A `git clone` of this repository on `main` is updated with `git pull --ff-only origin stable`, unless a tracked file has local edits. Then it skips the update and tells you. A clone on another branch or a clone of a fork is not updated.
 - A folder unpacked from the ZIP (what `install.ps1` sets up) is updated from the repository ZIP. Every Python file is checked for syntax errors before anything is written.
 - New or changed dependencies are installed with pip before any code changes. If pip fails, nothing changes.
 - Your data folder is never touched, and neither are `.venv`, `.git` or personal files kept at the top of the folder. Files an update replaces are copied to `.update_backup/` first. Nothing is deleted.

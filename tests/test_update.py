@@ -319,7 +319,7 @@ def clone(tmp_path: Path):
     (seed / up.VERSION_PATH).write_text(INIT_NEW, encoding="utf-8")
     (seed / "src/research_radar/cli.py").write_text("VALUE = 2\n", encoding="utf-8")
     git(seed, "commit", "-q", "-am", "two")
-    git(seed, "push", "-q", str(origin), "main")
+    git(seed, "push", "-q", str(origin), "main:main", "main:stable")
     urls = {
         "version_url": (seed / up.VERSION_PATH).as_uri(),
         "pyproject_url": (seed / "pyproject.toml").as_uri(),
@@ -362,12 +362,48 @@ def test_git_path_installs_new_dependencies_before_pulling(clone):
     seed, app, urls = clone
     (seed / "pyproject.toml").write_text(PYPROJECT_MORE, encoding="utf-8")
     git(seed, "commit", "-q", "-am", "three")
-    git(seed, "push", "-q", str(app.parent / "HEX-1000" / "research-radar.git"), "main")
+    git(seed, "push", "-q", str(app.parent / "HEX-1000" / "research-radar.git"), "main:main", "main:stable")
     pip = FakePip(watch=app / "src/research_radar/cli.py")
     result = up.check_and_update(app, pip=pip, **urls)
     assert result.status == "updated", result.message
     assert pip.calls == [["httpx>=0.27", "pyyaml>=6.0", "textual[syntax]>=9.0"]]
     assert pip.seen_then == "VALUE = 1\n"  # the pull came after pip
+
+
+def test_urls_name_the_stable_branch():
+    assert up.BRANCH == "stable" and up.CLONE_BRANCH == "main"
+    for url in (up.VERSION_URL, up.PYPROJECT_URL):
+        assert "/HEX-1000/research-radar/stable/" in url
+    assert up.ZIP_URL.endswith("/archive/refs/heads/stable.zip")
+
+
+def test_a_clone_on_main_pulls_stable_not_main(clone):
+    seed, app, urls = clone
+    origin = str(app.parent / "HEX-1000" / "research-radar.git")
+    (seed / "src/research_radar/cli.py").write_text("VALUE = 3\n", encoding="utf-8")
+    git(seed, "commit", "-q", "-am", "three")
+    git(seed, "push", "-q", origin, "main:main")  # main moves on, stable stays at "two"
+    result = up.check_and_update(app, pip=FakePip(), **urls)
+    assert result.status == "updated", result.message
+    assert (app / "src/research_radar/cli.py").read_text() == "VALUE = 2\n"
+
+
+def test_a_clone_ahead_of_stable_is_already_up_to_date(clone):
+    seed, app, urls = clone
+    git(app, "pull", "-q", "--ff-only", "origin", "main")
+    (app / "src/research_radar/cli.py").write_text("VALUE = 9\n", encoding="utf-8")
+    git(app, "commit", "-q", "-am", "ahead")
+    result = up.check_and_update(app, pip=FakePip(), **urls)
+    assert result.status == "current", result.message
+    assert (app / "src/research_radar/cli.py").read_text() == "VALUE = 9\n"
+
+
+def test_a_clone_on_another_branch_is_skipped(clone):
+    seed, app, urls = clone
+    git(app, "checkout", "-q", "-b", "work")
+    result = up.check_and_update(app, pip=FakePip(), **urls)
+    assert result.status == "skipped" and "main" in result.message
+    assert (app / "src/research_radar/cli.py").read_text() == "VALUE = 1\n"
 
 
 def test_without_git_on_path_a_clone_is_not_touched(clone, monkeypatch):
